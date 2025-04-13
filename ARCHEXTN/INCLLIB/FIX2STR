@@ -1,0 +1,36 @@
+ /*********************************************************************
+
+       THE FIX2STR MACRO - CONVERT A FIXED ITEM TO A STRING
+                   FOR USE WITH PL/I (F).
+
+ **********************************************************************/
+ %DECLARE
+     FIX2STR   ENTRY (FIXED) RETURNS (CHARACTER);
+ %FIX2STR :
+     PROCEDURE (N) RETURNS (CHARACTER);
+
+       DECLARE  (N,ABSN)      FIXED,
+                NSTR          CHARACTER;
+       NSTR = N;
+       IF N < 0 THEN
+           ABSN = N * -1;
+       ELSE
+           ABSN = N;
+       NSTR = ABSN;   /* CONVERSION RESULTS IN 99999999 FORMAT */
+       IF ABSN < 10 THEN
+             NSTR = SUBSTR(NSTR,8,1);
+       ELSE
+       IF ABSN < 100 THEN
+             NSTR = SUBSTR(NSTR,7,2);
+       ELSE
+       IF ABSN < 1000 THEN
+             NSTR = SUBSTR(NSTR,6,3);
+       ELSE
+       IF ABSN < 10000 THEN
+             NSTR = SUBSTR(NSTR,5,4);
+       ELSE
+             NSTR = '/* FIX2STR - NUMBER TOO LARGE */';
+       IF N<0 THEN
+          NSTR = '-' || NSTR;
+       RETURN(NSTR);
+ %END;

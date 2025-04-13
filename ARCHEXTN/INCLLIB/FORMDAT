@@ -1,0 +1,27 @@
+     DECLARE FORMAT_DATE ENTRY(CHAR(8),CHAR(3))
+                         RETURNS(CHAR(19));
+ FORMAT_DATE:PROC(A_DATE,FORM) RETURNS(CHAR(19));
+     DECLARE A_DATE             CHAR(8); /*YYMMDD FORMAT*/
+     DECLARE FORM               CHAR(3);
+     DECLARE MONTH_TABLE(12)    CHAR(9) VARYING INITIAL(
+       'JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+       'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER',
+       'DECEMBER') STATIC;
+     DECLARE MONTH              FIXED BINARY ALIGNED;
+     DECLARE FORMATED_DATE      CHAR(19);
+
+     MONTH = SUBSTR(A_DATE,3,2);
+     IF FORM = 'DMY' THEN
+        FORMATED_DATE = SUBSTR(A_DATE,5,2)      || '-' ||     /* DD  */
+                        MONTH_TABLE(MONTH)      || '-' ||   /* MONTH */
+                        '20' || SUBSTR(A_DATE,1,2);         /* 20YY  */
+     ELSE
+     IF FORM = 'MDY' THEN
+        FORMATED_DATE = MONTH_TABLE(MONTH)      || ' '  ||  /* MONTH */
+                        SUBSTR(A_DATE,5,2)      || ', ' ||    /* DD  */
+                        '20' || SUBSTR(A_DATE,1,2);         /* 20YY  */
+     ELSE
+        FORMATED_DATE = (19)'?';
+
+     RETURN(FORMATED_DATE);
+ END FORMAT_DATE;

@@ -1,0 +1,18 @@
+ /********************************************************************
+ *                                                                   *
+ *    ARCHDIR - ARCHIVE DIRECTORY EXTRACT LAYOUT                     *
+ *                                                                   *
+ ********************************************************************/
+     DECLARE 1 ARCH_DIR_REC,
+               5  ADR_KEY,
+                  10  ADR_REC_ID            CHAR(1),
+                  10  ADR_SUB_KEY,
+                      15  ADR_MODULE        CHAR(10),
+                      15  ADR_GROUP         CHAR(10),
+                      15  ADR_SUB_GROUP     CHAR(10),
+                      15  ADR_TYPE          CHAR(10),
+                      15  ADR_VERSION       FIXED BINARY(31,0)
+                                            UNALIGNED,
+                  10  ADR_REC_LEN           FIXED BINARY(31,0)
+                                            UNALIGNED;
+ /*******************************************************************/

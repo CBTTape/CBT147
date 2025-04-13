@@ -1,0 +1,336 @@
+         TITLE '**** DYNWORK - SVC 99 SUPPORT FOR WORK FILES ****'
+         MACRO
+&NAME    EABEND &MSG,&ABCODE
+***      WTO
+&NAME    WTO  &MSG,ROUTCDE=(2,11)
+         ABEND &ABCODE
+         DS   0H                FORCE ALIGNMENT FOR NEXT ITEM
+         MEND
+         PUNCH ' ALIAS DYNWRKP'
+***********************************************************************
+*                                                                     *
+*   DYNWORK - DYNAMIC WORKFILE ALLOCATE                               *
+*             ---      -- -                                           *
+*   THIS SUBROUTINE IS CALLED TO DYNAMICLY ALLOCATE WORK FILES FOR    *
+*   FOR ANY PURPOSE                                                   *
+*   IT IS EQUIVALENT TO JCL STATEMENT:                                *
+*                                                                     *
+*       //?????? DD UNIT=SYSDA,SPACE=(???,(?,?)),DISP=(NEW,DELETE),   *
+*       //          DCB=(RECFM=??,LRECL=?,BLKSIZE=?)                  *
+*                                                                     *
+*   THE CALLER CAN THEN OPEN A FILE USING 'DDNAME'.                   *
+*                                                                     *
+*   A SINGLE PARM STRUCTURE IS PASSED FORMATTED AS FOLLOWS:           *
+*      1)  VERSION CODE      4 CHARACTERS                             *
+*      2)  FUNCTION CODE     4 CHARACTERS - ALLO OR FREE.             *
+*      3)  REQUESTED DDNAME  8 CHARACTERS                             *
+*      4)  REQUESTED SPACEUN 3 CHARACTERS BLK,TRK,CYL                 *
+*      5)  REQUESTED RECFM   3 CHARACTERS F,FA,FB,FBA,V,VA,VBA,U      *
+*      6)  REQUESTED LRECL   2 BYTES BINARY HALFWORD                  *
+*      7)  REQUESTED BLKSIZE 2 BYTES BINARY HALFWORD                  *
+*      8)  REQUESTED PRI SPA 2 BYTES BINARY HALFWORD                  *
+*      9)  REQUESTED SEC SPA 2 BYTES BINARY HALFWORD                  *
+*      10) SVC 99 RET CD     2 BYTES                                  *
+*      11) SVC 99 INFO CD    2 BYTES                                  *
+*      12) SVC 99 CNTLBLK    4 BYTES                                  *
+*                                                                     *
+*      ITEMS 1-5 ARE REQUIRED.  THESE 5 ITEMS ARE EQUIVALENT TO       *
+*          //BLOCKNAM DD UNIT=SYSDA,SPACE=(SPACEUN,PRI)               *
+*      ITEM 4 IF BLK, ITEM 9 MUST BE > 0                              *
+*      ITEM 6 IF > 0, THE SPACE=(SPACEUN,(PRI,SEC))                   *
+*      ITEM 7 IF NOT BLANK, MUST BE F,FB,V,VB.                        *
+*      ITEM 8 IF = 0, THE LRECL IS NOT GENERATED.                     *
+*      ITEM 9 IF = 0, THE BLKSIZE IS NOT GENERATED.                   *
+*      ITEM 10-11 ARE RETURNED                                        *
+*                                                                     *
+*   RETURNS:                                                          *
+*      1)  BLOCK NAME IS CHANGED TO HOLD CONTROL INFO.  DO NOT        *
+*          CHANGE AFTER FIRST CALL.                                   *
+*      2)  SVC 99 RETURN CODES.  COMMON RETURN CODES (DECIMAL)        *
+*          RET CD  INFO CD   MEANING                                  *
+*          ------  -------                                            *
+*              0      0      SUCCESSFUL                               *
+*             33      ?      DATASET IN USE                           *
+*           1056      ?      ATTEMPT TO FREE OPEN DATASET             *
+*           1096      ?      DATASET ALREADY EXISTS                   *
+*                                                                     *
+*   REVISION HISTORY                                                  *
+*   ------------------                                                *
+*   V1.0.0  07/28/2023    INITIAL VERSION.                            *
+*                                                                     *
+*                                                                     *
+***********************************************************************
+**                                                                    *
+**   DYNWORK - (C) COPYRIGHT 2023 BY EDWARD G LISS                    *
+**                 ALL RIGHTS RESERVED                                *
+**                                                                    *
+**            THIS WORK MAY BE REDISTRUTED UNMODIFIED FOR             *
+**            NON COMMERCIAL USE AS LONG AS THE COPYRIGHT             *
+**            HOLD IS GIVEN CREDIT FOR THE ORIGINAL WORK.             *
+**                                                                    *
+***********************************************************************
+DYNWORK  ESTART TYPE=START,DESC='WORK ALLO',VER='1.0.0',BASE=R12,      *
+               REGS=YES,PLIF=DYNWRKP
+         BNE   NOTPLI
+         L     R1,0(,R1)               GET PLI PARMLIST OF DDB
+NOTPLI   EQU   *
+         L     R11,0(,R1)              GET ADDR OF PARM.
+COMM     EQU   *
+         USING PARMS,R11
+         USING DBLOCK,R2
+         CLC   PVERSION,=C'V1.0'
+         BE    VEROK
+         EABEND 'DYNWORK-INVALID VERSION',1234
+VEROK    EQU   *
+         CLC   PFUNC,=C'ALLO'
+         BE    FALLOC
+         CLC   PFUNC,=C'FREE'
+         BE    FFREE
+         EABEND 'DYNWORK-INVALID FUNCTION',1234
+***********************************************************************
+*                                                                     *
+*    FALLO - ALLOCATE WORK FILE                                       *
+*                                                                     *
+*    IF BLOCK IS ALLOCATED, ABEND                                     *
+*    OTHERWISE CREATE THE BLOCK AND ALLOCATE THE MEMBER               *
+*                                                                     *
+***********************************************************************
+FALLOC   EQU   *
+         CLC   PCNTRLB,=4X'00'      IS BLOCK INITIALIZED?
+         BE    INITOK               NO, BRANCH
+         CLC   PCNTRLB,=4C' '       IS BLOCK INITIALIZED?
+         BE    INITOK               NO, BRANCH
+         EABEND 'DYNWORK-ATTEMPT TO RE-ALLOCATE A BLOCK',1234
+INITOK   EQU   *
+***********************************************************************
+*                                                                     *
+*    GETMAIN TO ALLOCATE BLOCK AND PREPARE FOR BUILDING THE SVC99     *
+*    REQUEST LIST.                                                    *
+*    SAVE THE BLOCK ADDR INTO BYTES 5-8 OF THE DDNAME AND SET         *
+*    BYTES 1-4 TO BINARY ZEROS.                                       *
+*                                                                     *
+***********************************************************************
+         LA    R2,DBLOCKL
+         GETMAIN R,LV=(R2)
+         LR    R2,R1                  SET BR FOR WORK BLOCK
+*
+         USING DBLOCK,R2
+         MVC   DHOLDNM,PDDN           SAVE ORIGINAL DDNAME
+*        MVI   PCNTRLB,X'00'
+*        MVC   PCNTRLB+1(L'PCNTRLB-1),PCNTRLB
+         ST    R1,PCNTRLB             SAVE ADDR OF CONTROL BLOCK
+         LA    R1,DBLOCKL
+         ST    R1,DLEN
+***********************************************************************
+*                                                                     *
+*    VALIDATE THE REQUESTED DDNAME AS BEING ALL VALID CHARACTERS      *
+*    FOR A DDNAME - MUST BE A-Z,0-9,$,@,#                             *
+*                                                                     *
+***********************************************************************
+         TRT   PDDN,TRTDDN
+         BNZ   BADDDN
+         CLC   PDDN,=CL8' '
+         BE    BADDDN
+         CLI   PDDN,C' '
+         BNE   GOODDDN
+BADDDN   EQU   *
+         EABEND 'DYNWORK-INVALID DDNAME',1234
+GOODDDN  CNOP  2,4
+         EDYNAL INITRB,RBAREA=DBLOCK,VERB=S99VRBAL
+         EDYNAL ADDTU,TUKEY=DALDDNAM,TXT=PDDN
+         EDYNAL ADDTU,TUKEY=DALUNIT,TXT=UNITDEV
+***********************************************************************
+*                                                                     *
+*    VALIDATE THE REQUESTED SPACE UNITS                               *
+*    MUST BE BLK,TRK,CYL                                              *
+*                                                                     *
+***********************************************************************
+         CLC   PSPACEU,=C'BLK'
+         BE    SPBLKS
+         CLC   PSPACEU,=C'TRK'
+         BE    SPTRKS
+         CLC   PSPACEU,=C'CYL'
+         BE    SPCYLS
+         EABEND 'DYNWORK-INVALID SPACE UNITS',1234
+SPBLKS   CNOP  2,4
+         CLC   PBLKSIZE,=XL2'0000'         IS BLKSIZE OMITTED?
+         BNE   SPBLKS2
+         EABEND 'DYNWORK-BLKSIZE MUST BE SPECIFIED',1234
+SPBLKS2  EQU   *
+         MVC   LEN3+1(2),PBLKSIZE
+         EDYNAL ADDTU,TUKEY=DALBLKLN,TXT=LEN3
+         B     SPDONE
+SPTRKS   CNOP  2,4
+         EDYNAL ADDTU,TUKEY=DALTRK,TXT=NONE
+         B     SPDONE
+SPCYLS   CNOP  2,4
+         EDYNAL ADDTU,TUKEY=DALCYL,TXT=NONE
+SPDONE   EQU   *
+***********************************************************************
+*                                                                     *
+*    VALIDATE THE REQUESTED SPACE PRIMARY AND SECONDARY               *
+*    PRIMARY MUST BE SPECIFIED                                        *
+*                                                                     *
+***********************************************************************
+         CLC    PPRIMSP,=XL2'0000'      IS PRIME QTY GIVEN?
+         BNE    PRIMOK
+         EABEND 'DYNWORK-PRIME SPACE MUST BE SPECIFIED',1234
+PRIMOK   DS    0H
+         MVC   LEN3+1(2),PPRIMSP
+         EDYNAL ADDTU,TUKEY=DALPRIME,TXT=LEN3
+*
+         CLC   PSECDSP,=XL2'0000'      IS SEQDARY QTY GIVEN?
+         BE    NOSECD
+         MVC   LEN3+1(2),PSECDSP
+         EDYNAL ADDTU,TUKEY=DALSECND,TXT=LEN3
+NOSECD   DS    0H
+***********************************************************************
+*                                                                     *
+*    VALIDATE RECFM /LRECL /BLKSIZE                                   *
+*      RECFM MUST BE F,FA,FB,FBA,V,VA,VB,VBA,U                        *
+*                                                                     *
+***********************************************************************
+         CLC   PRECFM,=CL3'   '      RECFM SUPPLIED?
+         BE    RECFIN                NO, BRANCH
+         CLC   PRECFM,=3X'00'        RECFM SUPPLIED?
+         BE    RECFIN                NO, BRANCH
+         LA    R3,RECFMF
+RECFMLUP CLC   PRECFM,0(R3)          MATCH?
+         BE    RECDONE
+         LA    R3,4(R3)
+         CLI   0(R3),X'FF'           END OF TABLE?
+         BNE   RECFMLUP
+         EABEND 'DYNWORK-RECFM INVALID',1234
+RECFMF   DC    CL3'F  ',X'80'
+RECFMFA  DC    CL3'FA ',X'84'
+RECFMFB  DC    CL3'FB ',X'90'
+RECFMFBA DC    CL3'FBA',X'94'
+RECFMV   DC    CL3'V  ',X'40'
+RECFMVA  DC    CL3'VA ',X'44'
+RECFMVB  DC    CL3'VB ',X'50'
+RECFMVBA DC    CL3'VBA',X'54'
+RECFMU   DC    CL3'U  ',X'C0'
+         DC    XL3'FF'
+         DS    0H
+RECDONE  EQU   *
+         MVC   LEN1,3(R3)              GET SVC99 CODE
+         EDYNAL ADDTU,TUKEY=DALRECFM,TXT=LEN1
+*
+         CLC   PLRECL(L'PLRECL+L'PBLKSIZE),=4X'00'
+         BNE   CHKDCB
+         EABEND 'DYNWORK-LRECL/BLKSIZE REQUIRED',1234
+CHKDCB   EQU   *
+         CLC   PLRECL,=2X'00'
+         BE    NOLRECL
+         EDYNAL ADDTU,TUKEY=DALLRECL,TXT=PLRECL
+NOLRECL  EQU   *
+         CLC   PBLKSIZE,=2X'00'
+         BNE   GOTBLK
+         EABEND 'DYNWORK-BLKSIZE REQUIRED',1234
+GOTBLK   EQU   *
+         EDYNAL ADDTU,TUKEY=DALBLKSZ,TXT=PBLKSIZE
+RECFIN   EQU   *
+***********************************************************************
+*                                                                     *
+*    EXECUTE THE REQUEST                                              *
+*                                                                     *
+***********************************************************************
+         EDYNAL EXEC,RC=PRC,RSN=PREASCD
+         B     EXIT
+LEN1     DC    X'00'                 WORK AREA
+LEN3     DC    XL3'000000'             WORK AREA
+UNITDEV  DC    CL5'SYSDA'
+***********************************************************************
+*                                                                     *
+*    TABLE OF VALID CHARACTERS FOR USE IN A DDNAME                    *
+*    FOR A DDNAME - MUST BE A-Z,0-9,$,@,#                             *
+*                                                                     *
+***********************************************************************
+TRTDDN   DS    0CL256
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  00-0F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  10-1F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  20-2F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  30-3F
+*                     ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  40-4F
+*                   ? ? ? ? ? ? ? ? ? ? ? $ ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFF00FFFFFFFF'  50-5F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  60-6F
+*                   ? ? ? ? ? ? ? ? ? ? ? # @ ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFF0000FFFFFF'  70-7F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  80-8F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  90-9F
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  A0-AF
+*                   ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ?
+         DC    XL16'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'  B0-BF
+*                   ? A B C D E F G H I ? ? ? ? ? ?
+         DC    XL16'FF000000000000000000FFFFFFFFFFFF'  C0-CF
+*                   ? J K L M N O P Q R ? ? ? ? ? ?
+         DC    XL16'FF000000000000000000FFFFFFFFFFFF'  D0-DF
+*                   ? ? S T U V W X Y Z ? ? ? ? ? ?
+         DC    XL16'FFFF0000000000000000FFFFFFFFFFFF'  E0-EF
+*                   0 1 2 3 4 5 6 7 8 9 ? ? ? ? ? ?
+         DC    XL16'00000000000000000000FFFFFFFFFFFF'  F0-FF
+         EJECT
+***********************************************************************
+*                                                                     *
+*    FREE - DEALLOCATE MEMBER                                         *
+*                                                                     *
+*    IF BLOCK IS NOT ALLOCATED, ABEND                                 *
+*    A FREEMAIN WILL BE ISSUED TO RELEASE THE BLOCK STORAGE           *
+*                                                                     *
+***********************************************************************
+FFREE    DS    0H
+         CLC   PCNTRLB,=4X'00'      IS BLOCK INITIALIZED?
+         BE    BADFREE                 NO, BRANCH
+         CLC   PCNTRLB,=4C' '       IS BLOCK INITIALIZED?
+         BNE   FREEOK                  NO, BRANCH
+BADFREE  EQU   *
+         EABEND 'WORKAL0-ATTEMPT TO FREE UNALOCATED BLOCK',1234
+FREEOK   EQU   *
+         L     R2,PCNTRLB             GET ADDR OF CONTROL BLOCK
+         EDYNAL INITRB,RBAREA=DBLOCK,VERB=S99VRBUN
+         EDYNAL ADDTU,TUKEY=DUNDDNAM,TXT=PDDN
+SKIPMEM2 EQU   *
+         EDYNAL EXEC,RC=PRC,RSN=PREASCD
+         L     R0,DLEN
+         FREEMAIN R,LV=(R0),A=(R2)
+         B     EXIT
+ERREXIT  EQU   *
+EXIT     EQU   *
+         ERETURN RC=0
+         LTORG
+*
+*   PARM LIST
+*   SINCE THIS MODULE IS CALLABLE BY A PL/1 F PROGRAM, THE DSECT
+*   DECLARATION MUST BE CODED SO ALL FIELDS ARE ON THE CORRECT
+*   ADDRESS BOUNDRIES.
+*   THE PL/1 STRUCTURE MUST HAVE THE ALIGNED OPTION
+*
+PARMS    DSECT
+PCNTRLB  DS    A           ADDR OF CONTROL BLOCK
+PVERSION DS    CL4         VERSION CODE
+*** VERSION 1 FIELDS
+PFUNC    DS    CL4         FUNCTION CODE
+PDDN     DS    CL8         DDNAME
+PSPACEU  DS    CL3         SPACE UNITS (BLK,TRK,CYL)
+PRECFM   DS    CL3         RECFM (F,FA,FB,FBA,V,VA,VBA,U)
+PLRECL   DS    H           LRECEL
+PBLKSIZE DS    H           BLKSIZE
+PPRIMSP  DS    H           PRIMARY SPACE IN UNITS
+PSECDSP  DS    H           SECONDARY SPACE IN UNITS
+PRC      DS    H           RETURN CODE
+PREASCD  DS    H           REASON CODE
+*
+*   WORKING CONTROL BLOCK
+*
+         EDYNAL DCLRB,DSECT=DCNTRLB,TUPTRS=16,TUSIZE=512
+         END

@@ -1,0 +1,442 @@
+ /*  GENERATE ARCHIVE STATEMENTS TO CHANGE VERSION */
+ ARCHRST:PROC(EXEC_OPTIONS) OPTIONS(MAIN);
+     DECLARE EXEC_OPTIONS      CHAR(100) VARYING;
+ /********************************************************************
+  *                                                                  *
+  *  ARCHRST - RESET ARCHIVER VERSION NUMBERS                        *
+  *                                                                  *
+  *  THIS PROGRAM GENERATES THE NECESSARY ARCHIVER STATEMENTS TO     *
+  *  RESET THE CURREMT ARCHIVER VERSION NUMBER OF A MEMBER TO A      *
+  *  DESIRED VERSION.                                                *
+  *                                                                  *
+  *  MEMBER, GROUP, SUBGROUP, TYPE AND DESIRED VERSION ARE PASSED    *
+  *  TO ARCHRST.                                                     *
+  *                                                                  *
+  *  ARCHIVER IS CALLED TO PRODUCE A LIST OF THE MEMBER(S).          *
+  *  THIS LIST IS PROCESSED AND DELETE STATEMENTS ARE GENERATED      *
+  *  TO DELETE ALL THE VERSIONS OF A MEMBER LESS THAN THE CURRENT    *
+  *  VERSION DOWN TO AND INCLUDING THE DESIRED NEW VERSION.  AN      *
+  *  ALTER STATEMENT IS GENERATED TO CHANGE THE CURRENT VERSION      *
+  *  TO THE NEW VERSION.                                             *
+  *                                                                  *
+  *  REQUIRED JCL:                                                   *
+  *  //STEP  EXEC PGM=ARCHRST,REGION=4096K,                          *
+  *  //           PARM='MEMBER,GROUP,SUBGROUP,TYPE,NEWVERSION'       *
+  *  //ARCHIVE DD DSN=         YOUR ARCHIVE                          *
+  *  //SYSOUT   DD SYSOUT=*                                          *
+  *  //SYSPRINT DD SYSOUT=*                                          *
+  *                                                                  *
+  *                                                                  *
+  *                                                                  *
+  *  VERSION    DATE      COMMENTS                                   *
+  *  -------  ----------  -----------------------------------------  *
+  *  V1.0.0               INITIAL VERSION.                           *
+  *  V1.0.1   2024/08/10  BUG FIX. ARCHIVE LIST STEP ACCESSED AN     *
+  *                       INCORRECT ARCHIVE.                         *
+  *  V1.0.2   2024/08/19  BUG FIX. IF CURRENT VERSION IS LESS THAN   *
+  *                       THE TARGET, MESSAGE ISSUED AND NO RESET.   *
+  *                                                                  *
+  *******************************************************************/
+1    DECLARE THELIST        SEQUENTIAL RECORD FILE;
+     DECLARE (ARCHI1,ARCHI2,NOTES)
+                            STREAM FILE ENV(F(3120,80));
+     DECLARE A_LINE         CHAR(133);
+     DECLARE CONTINUE_ITEM_SCAN  BIT(1) ALIGNED;
+     DECLARE CONTINUE_NOTE_SCAN  BIT(1) ALIGNED;
+     DECLARE (TRUE INIT('1'B),
+              FALSE INIT('0'B)) BIT(1) ALIGNED;
+     DECLARE COMMIT_MODE        BIT(1) ALIGNED INIT('0'B);
+
+     DECLARE (CURRENT_VER,PREV_VER) FIXED BINARY(31) ALIGNED;
+     DECLARE  TARGET_VER            FIXED BINARY(31) ALIGNED;
+     DECLARE FILE_SEQ               FIXED BINARY(31) ALIGNED;
+     DECLARE PAGE_CTR               FIXED BINARY(15) ALIGNED INIT(0);
+     DECLARE LAST_ITEM_KEY        CHAR(45),
+             1  ITEM_ID DEFINED LAST_ITEM_KEY,
+                5  DASH_1         CHAR(1),
+                5  MEMBER_NAME    CHAR(10),
+                5  DASH_2         CHAR(1),
+                5  PROJECT_NAME   CHAR(10),
+                5  DASH_3         CHAR(1),
+                5  DESC           CHAR(10),
+                5  DASH_4         CHAR(1),
+                5  TYPE           CHAR(10);
+     DECLARE DCB_DATA             CHAR(28);
+
+     DECLARE 1 WORKALLO_BLK   ALIGNED STATIC,
+                5 CNTRLB      FIXED BINARY(31) INIT(0),
+                5 VERSION     CHAR(4)   INIT('V1.0'),
+                5 FUNC        CHAR(4)   INIT((4)' '),
+                5 DDN         CHAR(8)   INIT((8)' '),
+                5 SPACEU      CHAR(3)   INIT((3)' '),
+                5 RECFM       CHAR(3)   INIT('   '),
+                5 LRECL       FIXED BINARY(15) INIT(0),
+                5 BLKSIZE     FIXED BINARY(15) INIT(0),
+                5 PRIMSP      FIXED BINARY(15) INIT(0),
+                5 SECDSP      FIXED BINARY(15) INIT(0),
+                5 RC          FIXED BINARY(15) INIT(0),
+                5 REASON      CHAR(2);
+     DECLARE 1 THELIST_BLK   LIKE WORKALLO_BLK;
+     DECLARE 1 ARCHI1_BLK    LIKE WORKALLO_BLK;
+     DECLARE 1 ARCHI2_BLK    LIKE WORKALLO_BLK;
+     DECLARE 1 NOTES_BLK     LIKE WORKALLO_BLK;
+
+     %INCLUDE TRIM;
+     %INCLUDE FORMDAT;
+ /*********************************************************************
+ *                                                                    *
+ *   PARSE THE OPTIONS INTO WORDS.  EACH WORD MUST BE 10 CHARACTERS   *
+ *   OR LESS.                                                         *
+ *  -WORDS 1 TO 4 ARE REQUIRED AND MUST CONFORM TO THE NAMES AS       *
+ *   DEFINED BY ARCHIVER.  WILD CARDS ARE OK.                         *
+ *  -WORD 5 IS THE NEW VERSION NUMBER OF THE CURRENT MEMBER(S)        *
+ *   NAMED.                                                           *
+ *  -WORD 6 IF SUPPLIED MUST BE THE WORD COMMIT                       *
+ *                                                                    *
+ *********************************************************************/
+
+     DECLARE OPTION_WORK           CHAR(100) VARYING;
+     DECLARE OPTION_WORDS(6)       CHAR(10) VARYING;
+     DECLARE OPTION_COUNT          FIXED BINARY ALIGNED INIT(0);
+     DECLARE OPTION_CONTINUE       BIT(1) ALIGNED INIT('1'B);
+     DECLARE (COMMA,WORD_LEN)      FIXED BINARY ALIGNED;
+     DECLARE TODAYS_DATE           CHAR(19);
+     TODAYS_DATE = FORMAT_DATE(DATE,'MDY');
+     OPTION_WORDS(*) = '';
+
+     OPEN FILE(SYSPRINT) LINESIZE(133);
+     ON ENDPAGE(SYSPRINT)
+     BEGIN;
+        IF PAGE_CTR > 0 THEN PUT PAGE;
+        PAGE_CTR = PAGE_CTR + 1;
+        PUT EDIT('ARCHRST V1.0.2') (A)
+                (TODAYS_DATE) (X(55),A)
+                ('PAGE ',PAGE_CTR) (COL(120),A,F(5));
+        PUT SKIP(2);
+     END;
+     SIGNAL ENDPAGE(SYSPRINT);
+
+     IF LENGTH(EXEC_OPTIONS) = 0 THEN
+     DO;
+        PUT SKIP LIST('EXEC PARM IS REQUIRED.  STEP TERMINATED.');
+        STOP;
+     END;
+
+     PUT SKIP(2) EDIT('OPTIONS PASSED',EXEC_OPTIONS) (X(10),A,X(2),A);
+     OPTION_WORK = EXEC_OPTIONS;
+     DO WHILE(OPTION_CONTINUE & OPTION_COUNT < HBOUND(OPTION_WORDS,1));
+        COMMA = INDEX(OPTION_WORK,',');
+        IF COMMA = 0 THEN
+           WORD_LEN = LENGTH(OPTION_WORK);
+        ELSE
+           WORD_LEN = COMMA - 1;
+        IF WORD_LEN <= 0 THEN
+        DO;
+           PUT SKIP LIST('EXEC PARM HAS INCORRECT SYNTAX');
+           STOP;
+        END;
+        OPTION_COUNT = OPTION_COUNT + 1;
+        OPTION_WORDS(OPTION_COUNT) = SUBSTR(OPTION_WORK,1,WORD_LEN);
+        IF COMMA = 0 THEN
+           OPTION_CONTINUE = FALSE;
+        ELSE
+           OPTION_WORK = SUBSTR(OPTION_WORK,COMMA+1);
+     END;
+     IF OPTION_COUNT = 5 | OPTION_COUNT = 6 THEN ;
+     ELSE
+     DO;
+        PUT SKIP LIST('EXEC PARM IS MUST BE 5 OR 6 ITEMS ONLY.');
+        STOP;
+     END;
+
+     PUT SKIP(2) EDIT('PROCESSING MEMBER ',OPTION_WORDS(1)) (A,A)
+                     (' OF GROUP ',OPTION_WORDS(2))         (A,A)
+                     (' SUBGROUP ',OPTION_WORDS(3))         (A,A)
+                     (' TYPE ',OPTION_WORDS(4))             (A,A);
+     PUT SKIP EDIT('CHANGE MOST RECENT VERSION TO VERSION ',
+                   OPTION_WORDS(5)) (A,A);
+
+     IF VERIFY(OPTION_WORDS(5),'0123456789') > 0 THEN
+     DO;
+        PUT SKIP EDIT('VERSION MUST BE NUMERIC') (A);
+        STOP;
+     END;
+
+     IF OPTION_WORDS(6) = 'TEST' THEN ;
+     ELSE
+        IF OPTION_WORDS(6) = 'COMMIT' THEN
+           COMMIT_MODE = TRUE;
+        ELSE
+        DO;
+           PUT SKIP EDIT('THE 6 ITEM IN PARM MUST BE COMMIT OR ',
+                         'TEST') (A,A);
+           STOP;
+        END;
+ /*********************************************************************
+ *                                                                    *
+ *   DYNAMICLY ALLOCATE THE FOUR WORK FILES USED BY THIS PROCESS.     *
+ *                                                                    *
+ *********************************************************************/
+
+     THELIST_BLK.FUNC = 'ALLO';
+     THELIST_BLK.DDN  = 'THEFILE';
+     THELIST_BLK.SPACEU = 'TRK';
+     THELIST_BLK.RECFM  = 'FBA';
+     THELIST_BLK.LRECL  = 133;
+     THELIST_BLK.BLKSIZE= 1330;
+     THELIST_BLK.PRIMSP = 2;
+     THELIST_BLK.SECDSP = 0;
+     CALL CALL_SVC_99(THELIST_BLK);
+
+     ARCHI1_BLK.FUNC    = 'ALLO';
+     ARCHI1_BLK.DDN     = 'ARCHI1';
+     ARCHI1_BLK.SPACEU  = 'TRK';
+     ARCHI1_BLK.RECFM   = 'FB ';
+     ARCHI1_BLK.LRECL   = 80;
+     ARCHI1_BLK.BLKSIZE = 3120;
+     ARCHI1_BLK.PRIMSP  = 2;
+     ARCHI1_BLK.SECDSP  = 2;
+     CALL CALL_SVC_99(ARCHI1_BLK);
+
+     ARCHI2_BLK.FUNC    = 'ALLO';
+     ARCHI2_BLK.DDN     = 'ARCHI2';
+     ARCHI2_BLK.SPACEU  = 'TRK';
+     ARCHI2_BLK.RECFM   = 'FB ';
+     ARCHI2_BLK.LRECL   = 80;
+     ARCHI2_BLK.BLKSIZE = 3120;
+     ARCHI2_BLK.PRIMSP  = 2;
+     ARCHI2_BLK.SECDSP  = 2;
+     CALL CALL_SVC_99(ARCHI2_BLK);
+
+     NOTES_BLK.FUNC     = 'ALLO';
+     NOTES_BLK.DDN      = 'NOTES';
+     NOTES_BLK.SPACEU   = 'TRK';
+     NOTES_BLK.RECFM    = 'FB ';
+     NOTES_BLK.LRECL    = 80;
+     NOTES_BLK.BLKSIZE  = 3120;
+     NOTES_BLK.PRIMSP   = 2;
+     NOTES_BLK.SECDSP   = 2;
+     CALL CALL_SVC_99(NOTES_BLK);
+
+     OPEN FILE(ARCHI1) OUTPUT;
+     PUT FILE(ARCHI1) EDIT(' SET VSAM1DD=ARCHIVE',
+                           ' LIST ITEM=(',TRIM(OPTION_WORDS(1)),
+                           ',',TRIM(OPTION_WORDS(2)),
+                           ',',TRIM(OPTION_WORDS(3)),
+                           ',',TRIM(OPTION_WORDS(4)),
+                           '),NOTE=Y') (A,SKIP,(9)A);
+     CLOSE FILE(ARCHI1);
+
+     CALL RUN_ARCHIVER('ARCHI1',THELIST_BLK.DDN);
+
+     TARGET_VER = OPTION_WORDS(5);
+     OPEN FILE(THELIST) INPUT TITLE(THELIST_BLK.DDN);
+     ON ENDFILE(THELIST) GO TO END_OF_INPUT;
+     FILE_SEQ = 0;
+     OPEN FILE(ARCHI1) OUTPUT;
+     OPEN FILE(ARCHI2) OUTPUT;
+     OPEN FILE(NOTES) OUTPUT;
+     PUT FILE(ARCHI1) EDIT (' SET VSAM1DD=ARCHIVE')
+                           (A);
+     PUT FILE(ARCHI2) EDIT (' SET VSAM1DD=ARCHIVE')
+                           (A);
+ /*********************************************************************
+ *                                                                    *
+ *   SKIP LINE UNTIL FIRST ITEM IS FOUND.  THIS IS THE ONE TO RESET   *
+ *   THE VERSION.                                                     *
+ *                                                                    *
+ *********************************************************************/
+     CONTINUE_ITEM_SCAN = TRUE;
+     DO WHILE(CONTINUE_ITEM_SCAN);
+        READ FILE(THELIST) INTO(A_LINE);
+        CONTINUE_ITEM_SCAN = SUBSTR(A_LINE,2,1) ¬= '-';
+     END;
+     CALL PROCESS_FIRST_ITEM;
+
+ /*********************************************************************
+ *                                                                    *
+ *   EXTRACT NOTES IF PRESENT                                         *
+ *                                                                    *
+ *********************************************************************/
+     CONTINUE_ITEM_SCAN = TRUE;
+     DO WHILE(CONTINUE_ITEM_SCAN);
+        IF SUBSTR(A_LINE,2,1) = '-' THEN
+        DO;
+           IF SUBSTR(A_LINE,2,45) = LAST_ITEM_KEY THEN
+           DO;
+              CALL PROCESS_NEXT_ITEM;
+           END;
+           ELSE
+           DO;
+              FILE_SEQ = FILE_SEQ + 1;
+              CALL PROCESS_FIRST_ITEM;
+           END;
+        END;
+        ELSE
+        DO;
+           IF SUBSTR(A_LINE,2,1) = ' ' &
+              SUBSTR(A_LINE,11,3) = '-->' THEN
+           DO;
+              PUT SKIP FILE(NOTES) EDIT(SUBSTR(A_LINE,15,72),
+                                    'NOTE',FILE_SEQ) (A,A,P'9999');
+           END;
+           READ FILE(THELIST) INTO(A_LINE);
+        END;
+     END;
+ /*********************************************************************
+ *                                                                    *
+ *   PROCESS FIRST ITEM                                               *
+ *                                                                    *
+ *   SPECIAL LOGIC IS NEEDED TO TEST FOR THE CURRENT VERSION BEING    *
+ *   LESS THAN OR EQUAL TO THE TARGET VERSION.  IF SO, DO NOT         *
+ *   PROCESS THE ITEM.                                                *
+ *                                                                    *
+ *********************************************************************/
+ PROCESS_FIRST_ITEM:PROC;
+     CURRENT_VER = SUBSTR(A_LINE,51,8);
+     LAST_ITEM_KEY = SUBSTR(A_LINE,2,45);
+  /* PUT SKIP EDIT(LAST_ITEM_KEY, 'VERSION',CURRENT_VER, 'RENUMBERED')
+                  (A,A,F(8),A); */
+     DCB_DATA=SUBSTR(A_LINE,61,28);
+     IF CURRENT_VER > TARGET_VER THEN
+     DO;
+        PUT SKIP FILE(ARCHI2) EDIT(' ALTER ITEM=(',
+                                     TRIM(MEMBER_NAME),',',
+                                     TRIM(PROJECT_NAME),',',
+                                     TRIM(DESC),',',
+                                     TRIM(TYPE),',',
+                                     TRIM(CURRENT_VER),'),')
+                                   ((10)A);
+        PUT SKIP FILE(ARCHI2) EDIT('    NEW=(',
+                                     TRIM(MEMBER_NAME),',',
+                                     TRIM(PROJECT_NAME),',',
+                                     TRIM(DESC),',',
+                                     TRIM(TYPE),',',
+                                     TRIM(TARGET_VER),')')
+                                   ((10)A);
+        PUT SKIP FILE(ARCHI2) EDIT(' SET DDN=NOTES') (A);
+        PUT SKIP FILE(ARCHI2) EDIT(' ADDNOTE ITEM=(',
+                                     TRIM(MEMBER_NAME),',',
+                                     TRIM(PROJECT_NAME),',',
+                                     TRIM(DESC),',',
+                                     TRIM(TYPE),',',
+                                     TRIM(TARGET_VER),
+                                     '),KEY=NOTE',FILE_SEQ)
+                                   ((11)A,P'9999');
+     END;
+     ELSE
+        PUT SKIP EDIT('*** MEMBER SKIPPED DUE TO CONFLICT ***',A_LINE)
+                     (A,SKIP,X(5),A);
+     READ FILE(THELIST) INTO(A_LINE);
+ END PROCESS_FIRST_ITEM;
+ /*********************************************************************
+ *                                                                    *
+ *   PROCESS NEXT  ITEM                                               *
+ *                                                                    *
+ *********************************************************************/
+ PROCESS_NEXT_ITEM:PROC;
+     PREV_VER = SUBSTR(A_LINE,51,8);
+     IF PREV_VER >= TARGET_VER THEN
+     DO;
+     PUT SKIP FILE(ARCHI1) EDIT(' DELETE ITEM=(',
+                                  TRIM(MEMBER_NAME),',',
+                                  TRIM(PROJECT_NAME),',',
+                                  TRIM(DESC),',',
+                                  TRIM(TYPE),',',
+                                  TRIM(PREV_VER),'),')
+                                ((10)A)
+                                ('DATA=Y,NOTE=Y,BACK=N,ALIASES=N')
+                                (SKIP,COL(10),A);
+     PUT SKIP FILE(NOTES) EDIT(LAST_ITEM_KEY) (A,A)
+                              ('NOTE',FILE_SEQ) (COL(73),A,P'9999');
+     PUT SKIP FILE(NOTES) EDIT('VERSION ',PREV_VER,' DATED ',
+                                SUBSTR(A_LINE,92,35),' *DELETED*',
+                                'NOTE',FILE_SEQ)
+                              (A,F(8),A,A,A,COL(73),A,P'9999');
+     END;
+     READ FILE(THELIST) INTO(A_LINE);
+ END PROCESS_NEXT_ITEM;
+ /*********************************************************************
+ *                                                                    *
+ *   CLOSE THE WORK FILES AND RUN ARCHIVER IF IN COMMIT MODE          *
+ *                                                                    *
+ *********************************************************************/
+ END_OF_INPUT:
+     CLOSE FILE(ARCHI1),FILE(ARCHI2),FILE(NOTES);
+     IF COMMIT_MODE THEN
+     DO;
+        CALL RUN_ARCHIVER(ARCHI1_BLK.DDN,'SYSOUT');
+        CALL RUN_ARCHIVER(ARCHI2_BLK.DDN,'SYSOUT');
+     END;
+     ELSE
+     DO;
+        PUT SKIP(2) EDIT('PREVIEW OF DELETE STATEMENTS') (A);
+        CALL PRINT_PREVIEW(ARCHI1);
+        PUT SKIP(2) EDIT('PREVIEW OF ALTER STATEMENTS') (A);
+        CALL PRINT_PREVIEW(ARCHI2);
+        PUT SKIP(2) EDIT('PREVIEW OF NOTES ADDED') (A);
+        CALL PRINT_PREVIEW(NOTES);
+        PUT SKIP(3) EDIT('*** END OF PREVIEWS ***') (A);
+     END;
+
+ PRINT_PREVIEW:PROC(TEMP_FILE);
+     DECLARE TEMP_FILE FILE;
+     DECLARE A_LINE          CHAR(80);
+
+     OPEN FILE(TEMP_FILE) INPUT;
+     ON ENDFILE(TEMP_FILE) GO TO EOF;
+ GET_NEXT:
+     GET FILE(TEMP_FILE) EDIT(A_LINE) (A(80));
+     PUT SKIP EDIT(A_LINE) (X(5),A);
+     GO TO GET_NEXT;
+ EOF:
+     CLOSE FILE(TEMP_FILE);
+ END PRINT_PREVIEW;
+1/********************************************************************
+ *                                                                   *
+ *   SETUP AND RUN ARCHIVER TO PERFORM THE REQUESTED ACTION          *
+ *                                                                   *
+ ********************************************************************/
+ RUN_ARCHIVER:PROC(DD_IN,DD_OUT);
+     DECLARE (DD_IN,DD_OUT)     CHAR(8);
+     DECLARE READ_ARCHIVER      FIXED BINARY  INIT(0);
+     DECLARE
+      1  WS_PGM_BLK   UNALIGNED,
+          5  WS_PGM_NAME        CHAR(8)       INIT('ARCHIVER'),
+          5  WS_PGM_ADDR        FIXED BIN(31) INIT(0),
+          5  WS_CALL_MODE       CHAR(1)       INIT('K'),
+          5  FILLER             CHAR(3)       INIT((3)' ');
+     DECLARE
+      1   WS_EXEC_PARM  STATIC,
+          5  WS_PARM_LEN        FIXED BIN(15) INIT(80),
+          5  WS_PARM            CHAR(80);
+     WS_PARM    = 'SYSIN=' || TRIM(DD_IN) ||
+                  ',SYSPRINT=' || TRIM(DD_OUT);
+
+     CALL DYNALDA(WS_PGM_NAME,WS_EXEC_PARM);
+ END RUN_ARCHIVER;
+
+ CALL_SVC_99:PROC(DYN_BLK);
+     DECLARE 1 DYN_BLK ALIGNED,
+                5 CNTRLB      FIXED BINARY(31),
+                5 VERSION     CHAR(4),
+                5 FUNC        CHAR(4),
+                5 DDN         CHAR(8),
+                5 SPACEU      CHAR(3),
+                5 RECFM       CHAR(3),
+                5 LRECL       FIXED BINARY(15),
+                5 BLKSIZE     FIXED BINARY(15),
+                5 PRIMSP      FIXED BINARY(15),
+                5 SECDSP      FIXED BINARY(15),
+                5 RC          FIXED BINARY(15),
+                5 REASON      CHAR(2);
+     CALL DYNWRKP(DYN_BLK);
+     IF DYN_BLK.RC > 0 THEN
+     DO;
+        PUT SKIP LIST('DYNALOP FOR ALLOCATE',RC);
+        STOP;
+     END;
+  /* ELSE
+        PUT SKIP LIST('ALLOCATION OF ' || DDN || ' DONE.'); */
+ END CALL_SVC_99;
+ END ARCHRST;

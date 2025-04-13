@@ -1,0 +1,116 @@
+         MACRO
+&NAME    VSAMIO &PREFIX=$,&DSECT=NO,&VALUES=YES
+***********************************************************************
+**                                                                   **
+**       VV   VV    SSSSS       A      M     M    IIII      OOOOO    **
+**       VV   VV   SS   SS     AAA     MM   MM     II      OO   OO   **
+**       VV   VV   SS         AA AA    MMM MMM     II      OO   OO   **
+**       VV   VV    SSSSS    AA   AA   MMMMMMM     II      OO   OO   **
+**       VV   VV        SS   AA   AA   MM M MM     II      OO   OO   **
+**        VV VV    SS   SS   AAAAAAA   MM   MM     II      OO   OO   **
+**         VVV     SS   SS   AA   AA   MM   MM     II      OO   OO   **
+**          V       SSSSS    AA   AA   MM   MM    IIII      OOOOO    **
+**                                                                   **
+***********************************************************************
+** THESE PARAMETERS ARE USED TO INTERFACE WITH THE VSAM DATASET      **
+** ACCESS ROUTINE.                                                   **
+**                                                                   **
+** THE VSIO PARAMETER VALUES SUPPLY THE VALUES USED TO MOVE INTO     **
+** PARAMETER ENTRIES TO TAILOR THE ROUTINE TO A SPECIFIC DATASET AND **
+** TO PROVIDE COMMANDS TO DRIVE THE ROUTINE.                         **
+***********************************************************************
+         AIF   (T'&DSECT EQ 'O').DSOK
+         AIF   ('&DSECT' EQ 'NO').DSOK
+         AIF   ('&DSECT' EQ 'YES').DSOK
+         MNOTE 12,'*** VSAMIO DESECT MUST BE YES OR NO ***'
+         MEXIT
+.DSOK    AIF   (T'&VALUES EQ 'O').NOCONS
+         AIF   ('&VALUES' EQ 'NO').NOCONS
+         AIF   ('&VALUES' EQ 'YES').VALOK
+         MNOTE 12,'*** VSAMIO VALUES MUST BE YES OR NO ***'
+         MEXIT
+.VALOK   ANOP
+*
+*   VSIO PARAMETER VALUES
+*
+&PREFIX.OPEN    DC    CL08'OPEN    '
+&PREFIX.CLOSE   DC    CL08'CLOSE   '
+&PREFIX.READ    DC    CL08'READ    '
+&PREFIX.WRITE   DC    CL08'WRITE   '
+&PREFIX.REWRITE DC    CL08'REWRITE '
+&PREFIX.DELETE  DC    CL08'DELETE  '
+&PREFIX.STARTEQ DC    CL08'STARTEQ '
+&PREFIX.STARTGE DC    CL08'STARTGE '
+*
+&PREFIX.ESDS DC    CL04'ESDS'
+&PREFIX.KSDS DC    CL04'KSDS'
+&PREFIX.RRDS DC    CL04'RRDS'
+*
+&PREFIX.DIR DC    CL10'DIRECT    '
+&PREFIX.SEQ DC    CL10'SEQUENTIAL'
+&PREFIX.DYN DC    CL10'DYNAMIC   '
+*
+&PREFIX.INPUT DC    CL06'INPUT '
+&PREFIX.OUTPUT DC    CL06'OUTPUT'
+&PREFIX.UPDATE DC    CL06'UPDATE'
+*
+&PREFIX.RCSUCCS DC H'0'    VSIO_RC_SUCCESS
+&PREFIX.RCLOGER DC H'8'    VSIO_RC_LOGIC_ERROR
+&PREFIX.RCEOF DC    H'9999' VSIO_RC_END_OF_FILE
+&PREFIX.RCUNKCM DC H'20'   VSIO_RC_UNKNOWN_COMMAND
+&PREFIX.RCOPEN DC    H'21'   VSIO_RC_DATASET_ALREADY_OPEN
+&PREFIX.RCNTOPN DC H'22'   VSIO_RC_DATASET_NOT_OPEN
+&PREFIX.RCORGUN DC H'23'   VSIO_RC_ORGANIZATION_UNKNOWN
+&PREFIX.RCACUNK DC H'24'   VSIO_RC_ACCESS_UNKNOWN
+&PREFIX.RCORGMS DC H'25'   VSIO_RC_ORG_ACCESS_MISMATCH
+&PREFIX.RCMODUN DC H'26'   VSIO_RC_MODE_UNKNOWN
+&PREFIX.RCMODNG DC H'27'   VSIO_RC_MODE_UNSUPPORTED
+&PREFIX.RCDDBLK DC H'28'   VSIO_RC_DDNAME_BLANK
+*
+&PREFIX.FBDUPRC DC H'8'    FB_DUPLICATE_RECORD
+&PREFIX.FBKEYSQ DC H'12'   FB_KEY_SEQUENCE
+&PREFIX.FBNOTFN DC H'16'   FB_RECORD_NOT_FOUND
+&PREFIX.FBNOSPC DC H'28'   FB_NO_MORE_SPACE
+&PREFIX.FBRDNST DC H'88'   FB_READ_WITHOUT_START
+*
+.NOCONS  ANOP
+         AIF   (T'&DSECT EQ 'O').NODSECT
+         AIF   ('&DSECT' EQ 'YES').DSECT
+.NODSECT ANOP
+***********************************************************************
+** THE VSIO_PARAMETER_BLOCK IS THE COMMUNICATION INTERFACE TO THE    **
+** THE ROUTINE.                                                      **
+***********************************************************************
+*
+&NAME    DS  0F               VSIO_PARAMETER_BLOCK
+&PREFIX.COMMAND DC  CL8' '    VSIO_COMMAND
+&PREFIX.RC      DC  H'0'      VSIO_RETURN_CODE
+&PREFIX.VSRC    DC  H'0'      VSIO_VSAM_RC
+&PREFIX.VSFUNC  DC  H'0'      VSIO_VSAM_FUNCTION
+&PREFIX.VSREAS  DC  H'0'      VSIO_VSAM_FEEDBACK
+&NAME.L  EQU *-&NAME
+*
+         AGO  .EOM
+.DSECT   ANOP
+***********************************************************************
+** THE VSIO_PARAMETER_BLOCK IS THE COMMUNICATION INTERFACE TO THE    **
+** THE ROUTINE.                                                      **
+***********************************************************************
+*---------------------------------------------------------------------*
+* THE DUMMY SECTION BELOW MAPS THE COMMAND COMMUNICATION PARAMETER    *
+* BLOCK PASSED FROM THE CALLING PROGRAM.                              *
+*---------------------------------------------------------------------*
+*
+&NAME    DSECT               VSIO_PARAMETER_BLOCK
+&PREFIX.COMMAND DS  CL8      VSIO_COMMAND
+&PREFIX.RC      DS H         VSIO_RETURN_CODE
+&PREFIX.VSRC    DS  H        VSIO_VSAM_RC
+&PREFIX.VSFUNC  DS  H        VSIO_VSAM_FUNCTION
+&PREFIX.VSREAS  DS  H        VSIO_VSAM_FEEDBACK
+&NAME.L  EQU *-&NAME
+*
+.EOM     ANOP
+***********************************************************************
+**                         END OF VSAMIO COPY BOOK                   **
+***********************************************************************
+         MEND

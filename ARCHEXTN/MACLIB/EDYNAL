@@ -1,0 +1,228 @@
+         MACRO
+&LAB     EDYNAL &REQ,&DSECT=,&TUPTRS=,&TUSIZE=,                        *
+               &RBAREA=,&VERB=,&TUKEY=,&TXT=,&RC=,&RSN=
+***********************************************************************
+.**********************************************************************
+.*                                                                    *
+.*   EDYNAL - (C) COPYRIGHT 2024 BY EDWARD G LISS                     *
+.*                ALL RIGHTS RESERVED                                 *
+.*                                                                    *
+.*            THIS WORK MAY BE REDISTRUTED UNMODIFIED FOR             *
+.*            NON COMMERCIAL USE AS LONG AS THE COPYRIGHT             *
+.*            HOLD IS GIVEN CREDIT FOR THE ORIGINAL WORK.             *
+.*                                                                    *
+.**********************************************************************
+.*                                                                    *
+.*   EDYNAL - DYNAMIC FILE ALLOCATION MACRO                           *
+.*                                                                    *
+.*   THIS MACRO CAN BE USED TO GENERATE THE REQUEST BLOCKS FOR USING  *
+.*   THE DYNAMIC ALLOCATION FACILITIES (SVC 99) AS WELL AS EXECUTING  *
+.*   THE REQUESTS.                                                    *
+.*                                                                    *
+.*   USAGE:    NOTE:ALL KEYWORDS ARE REQUIRED                         *
+.*       EDYNAL DCLRB,DSECT=,TUPTRS=,TUSIZE=                          *
+.*       EDYNAL INITRB,RBAREA=,VERB=                                  *
+.*       EDYNAL ADDTU,TUKEY=,TXT=                                     *
+.*       EDYNAL EXEC,RC=,RSN=                                         *
+.*                                                                    *
+.*   1)  CREATE THE DATA AREAS                                        *
+.*       EDYNAL DCLRB,DSECT=,TUPTRS=,TUSIZE=                          *
+.*          DSECT IS A SYMBOLIC NAME FOR THE STORAGE AQUIRED FOR      *
+.*                CONTAINING THE RB.                                  *
+.*          TUPTRS IS A NUMBER SPECIFING HOW MANY TEXT UNITS THAT     *
+.*                SPACE SHOULD BE RESERVED FOR.                       *
+.*          TUSIZE IS A NUMBER SPECIFING HOW MANY BYTES SHOULD BE     *
+.*                RESERVED FOR THE TEXT UNITS.  TEXT UNITS ARE        *
+.*                VARIABLE LENGTH DEPENDING ON WHAT IS REQUESTED.     *
+.*       NOTE THAT DCLRB NEED ONLY BE REQUESTED 1 TIME AND CAN BE     *
+.*            REUSED.                                                 *
+.*                                                                    *
+.*   2)  INITIALIZE THE REQUEST BLOCK.                                *
+.*       EDYNAL INITRB,RBAREA=,VERB=                                  *
+.*           RBAREA IS THE NAME OF THE DSECT FROM THE DCLRB           *
+.*           VERB IS ONE OF THE ALLOCATION KEYS DEFINED IN            *
+.*                MACRO IEFZB4D2                                      *
+.*                                                                    *
+.*   3)  ADD TEXT UNIT TO THE REQUEST BLOCK.                          *
+.*       EDYNAL ADDTU,TUKEY=,TXT=                                     *
+.*           TUKEY IS STATES A PART OF THE REQUEST.  SEE IBM          *
+.*                WEBSITE OR MANUAL FOR ALL THE KEYS AND WHAT         *
+.*                ARE VALUES FOR TXT.                                 *
+.*                                                                    *
+.*   4)  EXECUTE THE REQUEST                                          *
+.*       EDYNAL EXEC,RC=,RSN=                                         *
+.*            RC AND RSN ARE BOTH 2 BYTE FEEDBACK FIELDS.             *
+.*            IF RC=X'0000', REQUEST IS SUCCESSFUL AND RSN IS         *
+.*                NOT USED.                                           *
+.*            RSN VALUES VARYING DEPENDING ON THE VALUE OF RC.  SEE   *
+.*                WEBSITE OR MANUAL FOR ALL THE RC AND RSN MEANINGS.  *
+.**********************************************************************
+.*                                                                    *
+.*   REVISION HISTORY                                                 *
+.*   -------------------                                              *
+.*   V1.0.0   09/29/2017    INITIAL VERSION                           *
+.*   V1.0.1   05/07/2014    ADDED CODE TO ACCEPT TXT=NONE             *
+.*                                                                    *
+.*                                                                    *
+.**********************************************************************
+         LCLC  &ERRSW
+&ERRSW   SETC  'N'
+         AIF   (T'&REQ EQ 'O').NOREQ
+         AIF   ('&REQ' EQ 'DCLRB').DCLRB
+         AIF   ('&REQ' EQ 'INITRB').INITRB
+         AIF   ('&REQ' EQ 'ADDTU').ADDTU
+         AIF   ('&REQ' EQ 'EXEC').EXEC
+         MNOTE 16,'INVALID REQ CODE'
+         MEXIT
+.NOREQ   MNOTE 16,'REQ IS OMITTED'
+         MEXIT
+.DCLRB   ANOP
+.****************************************************************
+.*     DCLRB DETECTED
+         AIF   (T'&DSECT NE 'O').NED001
+         MNOTE 12,'DSECT MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED001  ANOP
+         AIF   (T'&TUPTRS NE 'O').NED002
+         MNOTE 12,'TUPTRS MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED002  ANOP
+         AIF   (T'&TUSIZE NE 'O').NED003
+         MNOTE 12,'TUSIZE MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED003  ANOP
+         AIF   ('&ERRSW' EQ 'Y').EXIT
+DBLOCK   DSECT
+DLEN     DS    F              BLOCK LENGTH (ONLY USED IF GET/FREE MAIN)
+DHOLDNM  DS    CL8            SAVE AREA FOR NAME
+DBOUNDS  DS    0A
+DTUPTRCU DS    A              CURRENT TUPTR
+DTUPTRMA DS    A              MAX TUPRT
+DTUNITCU DS    A              CURRENT TEXT UNIT
+DTUNITMA DS    A              MAX TEXT UNIT
+DBOUNDSL EQU   *-DBOUNDS
+DRBP     DS    A              <- S99RBP  DSECT
+DRB      DS    CL20           <- S99RB   DSECT
+DTUPTR   DS    &TUPTRS.A      <- S99TUPL DSECT
+DTXTUNIT DS    CL&TUSIZE      <- S99UNIT AREA
+DBLOCKL  EQU   *-DBLOCK
+DTUPTRL  EQU   &TUPTRS*L'DTUPTR
+DTXTUNIL EQU   &TUSIZE
+         IEFZB4D0
+         IEFZB4D2
+         AGO   .EXIT
+.****************************************************************
+.*     INITRB DETECTED
+.INITRB  ANOP
+         AIF   (T'&RBAREA NE 'O').NED010
+         MNOTE 12,'RBAREA MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED010  ANOP
+         AIF   (T'&VERB NE 'O').NED011
+         MNOTE 12,'VERB MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED011  ANOP
+         AIF   ('&ERRSW' EQ 'Y').EXIT
+         LA    R1,&RBAREA      SET BR FOR &RBAREA
+         USING DBLOCK,R1
+         LA    R15,DTUPTR      GET START ADDR OF DTUPTR TABLE
+         ST    R15,DTUPTRCU        AND SAVE IT
+         LA    R15,DTUPTRL(,R15)   CALC END ADDR OF TABLE
+         ST    R15,DTUPTRMA        AND SAVE IT
+         LA    R15,DTXTUNIT    GET START ADDR OF DTXTUNIT TABLE
+         ST    R15,DTUNITCU        AND SAVE IT
+         LA    R15,DTXTUNIL(,R15)   CALC END ADDR OF TABLE
+         ST    R15,DTUNITMA            AND SAVE IT
+*
+         LA    R15,DRB          GET ADDR OF DRB
+*
+         LA    R1,DRBP
+         USING S99RBP,R1
+         ST    R15,S99RBPTR      SET RB POINTER TO DRB ADDR
+         OI    S99RBPTR,X'80'      AND TURN ON HIGH ORDER BIT
+*
+         L     R1,S99RBPTR         GET ADDR OF RB AND SET BR
+         USING S99RB,R1
+*
+         MVI   S99RBLN,X'14'       SET RB LENGTH TO 20
+         MVI   S99VERB,&VERB       SET UP ALLOCATE
+         MVI   S99FLG11,X'00'
+         MVI   S99FLG12,X'00'
+         MVI   S99RSC,X'00'        CLEAR RSN CODES
+         MVC   S99RSC+1(L'S99RSC-1),S99RSC
+         LA    R15,S99RBEND        SET ADDRESS OF THE DTU PTRS
+         LA    R15,0(,15)
+         ST    R15,S99TXTPP
+         MVI   S99RSV01,X'00'      CLEAR RESERVED AREA
+         MVC   S99RSV01+1(L'S99RSV01-1),S99RSV01
+         MVI   S99FLAG2,X'00'      CLEAR AUTH FLAGS
+         MVC   S99FLAG2+1(L'S99FLAG2-1),S99FLAG2
+         AGO   .EXIT
+.****************************************************************
+.*     ADDTU DETECTED
+.ADDTU   ANOP
+         AIF   (T'&TUKEY NE 'O').NED020
+         MNOTE 12,'TUKEY MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED020  ANOP
+         AIF   (T'&TXT NE 'O').NED021
+         MNOTE 12,'TXT MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED021  ANOP
+*
+         AIF   ('&ERRSW' EQ 'Y').EXIT
+         L     R15,DTUPTRCU        GET CURRENT TUPTR
+         C     R15,DTUPTRMA        IS IT GREATER OR EQU THE MAX?
+         BL    TUP&SYSNDX
+         WTO   'TUPTR TABLE FULL',ROUTCDE=(2,11)
+         ABEND 1234
+TUP&SYSNDX EQU  *
+         LA    R15,4(,R15)
+         ST    R15,DTUPTRCU        SAVE UPDATED TUPTR
+         USING S99TUPL,R15
+         L     R14,DTUNITCU        GET ADDR OF NEXT AVAIL TXT UNIT
+         ST    R14,S99TUPTR        ADD TXT UNIT ADDR TO TUPTR TABLE
+         AIF   ('&TXT' EQ 'NONE').NOTXT
+*
+         USING S99TUNIT,R14
+         MVC   S99TUKEY,=AL2(&TUKEY)
+         MVC   S99TUNUM,=AL2(1)
+         MVC   S99TULNG,=AL2(L'&TXT)
+         MVC   S99TUPAR(L'&TXT),&TXT
+         DROP  R14
+         LA    R14,6+L'&TXT.(,R14)
+         ST    R14,DTUNITCU
+         DROP  R15
+         AGO   .EXIT
+.NOTXT   ANOP
+         USING S99TUNIT,R14
+         MVC   S99TUKEY,=AL2(&TUKEY)
+         MVC   S99TUNUM,=AL2(0)
+         DROP  R14
+         LA    R14,4(,R14)
+         ST    R14,DTUNITCU
+         DROP  R15
+         AGO   .EXIT
+.****************************************************************
+.*     EXEC DETECTED
+.EXEC    ANOP
+         AIF   (T'&RC NE 'O').NED030
+         MNOTE 12,'RC MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED030  ANOP
+         AIF   (T'&RSN NE 'O').NED031
+         MNOTE 12,'TXT MUST BE SPECIFIED'
+&ERRSW   SETC  'Y'
+.NED031  ANOP
+         AIF   ('&ERRSW' EQ 'Y').EXIT
+         L     R15,DTUPTRCU        GET LAST TUPTR ADDED
+         OI    0(R15),X'80'        TURN ON HIGH ORDER BIT
+         LA    R1,DRBP             GET RB PTR
+         SVC   99                  DO THE SVC 99
+         L     R1,DRBP
+         USING S99RB,R1
+         MVC   &RC,S99ERROR
+         MVC   &RSN,S99INFO
+         DROP  R1
+.EXIT    MEXIT
+         MEND

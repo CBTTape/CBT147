@@ -1,0 +1,24 @@
+ /********************************************************************
+ *                                                                   *
+ *    ARCHREC - ARCHIVE RECORD LAYOUT                                *
+ *                                                                   *
+ ********************************************************************/
+     DECLARE 1 ARCHIVE_RECORD               CHAR(32000);
+
+     DECLARE ARC_RECORD_PTR                 POINTER;
+
+     DECLARE 1 ARCH_DATA_REC                BASED(ARC_RECORD_PTR),
+               5  ADR_KEY,
+                  10  ADR_REC_ID            CHAR(1),
+                  10  ADR_SUB_KEY,
+                      15  ADR_MODULE        CHAR(10),
+                      15  ADR_GROUP         CHAR(10),
+                      15  ADR_SUB_GROUP     CHAR(10),
+                      15  ADR_TYPE          CHAR(10),
+                      15  ADR_VERSION       FIXED BINARY(31,0)
+                                            UNALIGNED,
+                      15  ADR_SEQ_NO        FIXED BINARY(31,0)
+                                            UNALIGNED,
+               5  ADR_DATA,
+                  10  ADR_STUFF             CHAR(31951);
+  /******************************************************************/

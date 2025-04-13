@@ -1,0 +1,507 @@
+ /*  ARCHCOMP - V1.2.0 - COMPARE ARCHIVE INDEX REPORTS  */
+ ARCHCMP:PROC(CMD_OPT) OPTIONS(MAIN);
+     DECLARE CMD_OPT CHAR(100) VARYING;
+0/********************************************************************
+  *                                                                  *
+  *  ARCHCMP - COMPARE TWO INDEX ARCHIVER INDEX FILES                *
+  *                                                                  *
+  *  THIS PROGRAM READS 2 ARCHIVER FILES TO PRODUCE A REPORT OF      *
+  *  OF MATCHING/UNMATCHED ARCHIVE ENTRIES.                          *
+  *                                                                  *
+  *  VERSION    DATE      COMMENTS                                   *
+  *  -------  ----------  -----------------------------------------  *
+  *  V1.0.0              -INITIAL VERSION                            *
+  *  V1.1.0              -ADDED SORT SO THE VERSION NUMBERS WOULD    *
+  *                       BE ASCENCING SEQUENCE.                     *
+  *  V1.2.0              -ADD OPTION TO USE MEMBER OR GROUP AS       *
+  *                       MAJOR SORT FIELD.                          *
+  *                      -ADDED SYNC TO GENERATE ARCHIVER COPY       *
+  *                       STATEMENTS.                                *
+  *                                                                  *
+  *******************************************************************/
+
+  %INCLUDE FIX2STR;
+  %INCLUDE SELECT;
+
+     DECLARE (FILE1,FILE2)             SEQUENTIAL RECORD FILE
+                                       ENV(F(3185,49));
+     DECLARE CNTLFL                    STREAM FILE ENV(F(3120,80));
+     DECLARE (TRUE  INIT('1'B), FALSE  INIT('0'B)) BIT(1) ALIGNED;
+     DECLARE (RECS_IN_1,RECS_IN_2)  FIXED BIN(31) ALIGNED INITIAL(0);
+     DECLARE TODAYS_DATE                   CHAR(19);
+     DECLARE (EOF_1,EOF_2)             BIT(1) ALIGNED INIT('0'B);
+     DECLARE SUMMARY_ONLY              BIT(1) ALIGNED INIT('0'B);
+     DECLARE PAGE_NUMBER               FIXED BINARY ALIGNED INIT(0);
+
+     DECLARE (SORT_MEMB,SORT_GROUP)    BIT(1) ALIGNED INIT('0'B);
+     DECLARE FILTER_GROUP              BIT(1) ALIGNED INIT('0'B);
+
+ %INCLUDE FORMDAT;
+
+ %INCLUDE TRIM;
+
+ %INCLUDE ARCHDIR;
+
+     DECLARE ARCH_DIR_REC_2  LIKE ARCH_DIR_REC;
+
+     DECLARE FILE_1_KEY         CHAR(45)  BASED(F1_PTR);
+     DECLARE FILE_2_KEY         CHAR(45)  BASED(F2_PTR);
+
+     DECLARE IHESRTD ENTRY(CHAR(30),            /* SORT STMT */
+                           CHAR(30),            /* RECORD STMT */
+                           FIXED BINARY(31,0),  /* MEM */
+                           FIXED BINARY(31,0),  /* RET CODE */
+                           ENTRY,               /* INPUT PROC */
+                           ENTRY);              /* OUTPUT PROC */
+     DECLARE SORT_STMT     CHAR(30)
+           INITIAL(' SORT FIELDS=(1,45,CH,A)   ');
+     DECLARE RECORD_STMT   CHAR(30)
+           INITIAL(' RECORD TYPE=F,LENGTH=(49) ');
+     DECLARE IHESARC ENTRY(FIXED BINARY(31,0));
+   /*DECLARE SORT_INPUT RETURNS(CHAR(49));*/
+     DECLARE SORT_RC    FIXED BINARY(31,0);
+
+ %INCLUDE PARMPARS;
+
+     F1_PTR = ADDR(ARCH_DIR_REC);
+     F2_PTR = ADDR(ARCH_DIR_REC_2);
+
+1/********************************************************************
+ *                                                                   *
+ *   INITILIALIZE                                                    *
+ *                                                                   *
+ ********************************************************************/
+
+     DECLARE CMD_OPTIONS(3)     CHAR(8);
+     DECLARE CMD_COUNT          FIXED BINARY;
+     DECLARE GROUP_NAME         CHAR(8)   INIT((8)' ');
+
+     TODAYS_DATE = FORMAT_DATE(DATE,'MDY');
+
+     OPEN FILE(SYSPRINT) LINESIZE(133) PAGESIZE(58);
+
+     CALL PARM_PARSE(CMD_OPT, CMD_OPTIONS, CMD_COUNT);
+
+     IF CMD_COUNT = 0 THEN
+     DO;
+        SORT_MEMB = TRUE;
+        SORT_GROUP = FALSE;
+        SUMMARY_ONLY = FALSE;
+        FILTER_GROUP = FALSE;
+     END;
+     ELSE
+     DO I=1 TO CMD_COUNT;
+        SELECT (CMD_OPTIONS(I))
+        WHEN ('MEMBER  ')
+           SORT_MEMB = TRUE;
+           SORT_GROUP = FALSE;
+        WHEN ('GROUP   ')
+           SORT_MEMB = FALSE;
+           SORT_GROUP = TRUE;
+        WHEN ('SUMMARY ')
+           SUMMARY_ONLY = TRUE;
+        OTHERWISE
+           FILTER_GROUP = TRUE;
+           GROUP_NAME = CMD_OPTIONS(I);
+        ENDSELECT
+     END;
+
+     IF SORT_MEMB & FILTER_GROUP THEN
+     DO;
+        PUT EDIT('ARCHCOMP V1.2.0',TODAYS_DATE)
+              (A,X(10),A);
+        PUT SKIP(2) LIST('INVALID PARM ',CMD_OPT);
+        STOP;
+     END;
+
+     ON ENDPAGE(SYSPRINT)
+     BEGIN;
+         IF PAGE_NUMBER > 0 THEN PUT PAGE;
+         PAGE_NUMBER=PAGE_NUMBER+1;
+         PUT EDIT('ARCHCOMP V1.2.0','RUN DATE:',
+                  TODAYS_DATE,'PAGE ',PAGE_NUMBER)
+                 (A,X(10),A,A,COL(120),A,P'9999');
+         PUT SKIP EDIT('ARCHIVE 1','|','ARCHIVE 2')
+                       (COL(28),A,COL(67),A,COL(95),A);
+         PUT SKIP;
+         IF SORT_MEMB THEN
+         DO;
+            PUT EDIT('MODULE','GROUP','SUB GROUP','TYPE','VERSION')
+                ((5)A(12));
+            PUT EDIT('|') (COL(67),A(3));
+            PUT EDIT('MODULE','GROUP','SUB GROUP','TYPE','VERSION')
+                ((5)A(12));
+         END;
+         ELSE
+         DO;
+            PUT EDIT('GROUP','MEMBER','SUB GROUP','TYPE','VERSION')
+                ((5)A(12));
+            PUT EDIT('|') (COL(67),A(3));
+            PUT EDIT('GROUP','MEMBER','SUB GROUP','TYPE','VERSION')
+                ((5)A(12));
+         END;
+         PUT SKIP;
+         DO I=1 TO 4;
+            PUT EDIT((10)'-') (A(12));
+         END;
+         PUT EDIT((7)'-','|') (A,COL(67),A(3));
+         DO I=1 TO 4;
+            PUT EDIT((10)'-') (A(12));
+         END;
+         PUT EDIT((7)'-') (A);
+         IF PAGE_NUMBER > 1 THEN
+            PUT SKIP;
+     END;
+
+     SIGNAL ENDPAGE(SYSPRINT);
+
+     CALL PROCESS_ARCHIVE('ARCHIVE1',FILE1);
+     CALL PROCESS_ARCHIVE('ARCHIVE2',FILE2);
+
+     CALL COMPARE_FILES;
+
+     CALL IHESARC(0);
+ COMPARE_FILES:PROC;
+     OPEN FILE(FILE1) INPUT;
+     OPEN FILE(FILE2) INPUT;
+     OPEN FILE(CNTLFL) OUTPUT;
+     ON ENDFILE(FILE1)
+     BEGIN;
+         PUT SKIP LIST('FILE 1 IS EMPTY.  COMPARE CANCELLED.');
+         STOP;
+     END;
+     ON ENDFILE(FILE2)
+     BEGIN;
+         PUT SKIP LIST('FILE 2 IS EMPTY.  COMPARE CANCELLED.');
+         STOP;
+     END;
+
+     PUT FILE(CNTLFL) EDIT('*** GENERATED BY ARCHCOMP V1.2.0 - ',
+                           TODAYS_DATE) (A,A);
+     PUT FILE(CNTLFL) EDIT(' SET VSAM1DD=ARCHOUT') (SKIP,A);
+     PUT FILE(CNTLFL) EDIT(' SET VSAM2DD=ARCHIN') (SKIP,A);
+
+     CALL READ_FILE_1;
+     CALL READ_FILE_2;
+
+     ON ENDFILE(FILE1)  EOF_1=TRUE;
+     ON ENDFILE(FILE2)  EOF_2=TRUE;
+
+     DO WHILE(¬EOF_1 | ¬EOF_2);
+         IF FILE_1_KEY = FILE_2_KEY THEN
+            CALL EQUAL_KEYS;
+         ELSE
+            IF FILE_1_KEY < FILE_2_KEY THEN
+              CALL KEY_1_LT_KEY_2;
+            ELSE
+                CALL KEY_1_GT_KEY_2;
+     END;
+
+     CLOSE FILE(FILE1);
+     CLOSE FILE(FILE2);
+
+     PUT FILE(CNTLFL) EDIT('*** GENERATED BY ARCHCOMP V1.2.0 - ',
+                           TODAYS_DATE) (SKIP,A,A);
+     CLOSE FILE(CNTLFL);
+
+     PUT SKIP(2) EDIT('*** END OF REPORT ***') (A)
+     (RECS_IN_1,' FILE 1 ITEMS IN',
+      RECS_IN_2,' FILE 2 ITEMS IN') (F(7),A,F(7),A);
+
+ EQUAL_KEYS:PROC;
+     IF SUMMARY_ONLY THEN;
+     ELSE
+     DO;
+        PUT SKIP EDIT(
+            ARCH_DIR_REC.ADR_MODULE,
+            ARCH_DIR_REC.ADR_GROUP,
+            ARCH_DIR_REC.ADR_SUB_GROUP,
+            ARCH_DIR_REC.ADR_TYPE,
+            ARCH_DIR_REC.ADR_VERSION)  ((4)A(12),F(7));
+        PUT EDIT('|') (COL(67),A(3)) (
+            ARCH_DIR_REC_2.ADR_MODULE,
+            ARCH_DIR_REC_2.ADR_GROUP,
+            ARCH_DIR_REC_2.ADR_SUB_GROUP,
+            ARCH_DIR_REC_2.ADR_TYPE,
+            ARCH_DIR_REC_2.ADR_VERSION)  ((4)A(12),F(7));
+     END;
+     CALL READ_FILE_1;
+     CALL READ_FILE_2;
+ END EQUAL_KEYS;
+ KEY_1_LT_KEY_2:PROC;
+     PUT SKIP EDIT(
+         ARCH_DIR_REC.ADR_MODULE,
+         ARCH_DIR_REC.ADR_GROUP,
+         ARCH_DIR_REC.ADR_SUB_GROUP,
+         ARCH_DIR_REC.ADR_TYPE,
+         ARCH_DIR_REC.ADR_VERSION)  ((4)A(12),F(7));
+     PUT EDIT('|') (COL(67),A(3));
+     CALL READ_FILE_1;
+ END KEY_1_LT_KEY_2;
+ KEY_1_GT_KEY_2:PROC;
+     PUT SKIP EDIT('|') (COL(67),A(3)) (
+         ARCH_DIR_REC_2.ADR_MODULE,
+         ARCH_DIR_REC_2.ADR_GROUP,
+         ARCH_DIR_REC_2.ADR_SUB_GROUP,
+         ARCH_DIR_REC_2.ADR_TYPE,
+         ARCH_DIR_REC_2.ADR_VERSION)  ((4)A(12),F(7));
+     PUT SKIP FILE(CNTLFL) EDIT(' COPY ITEM=(') (A);
+     IF SORT_MEMB THEN
+        PUT FILE(CNTLFL) EDIT(
+          TRIM(ARCH_DIR_REC_2.ADR_MODULE),',',
+          TRIM(ARCH_DIR_REC_2.ADR_GROUP),',') ((4)A);
+     ELSE
+        PUT FILE(CNTLFL) EDIT(
+          TRIM(ARCH_DIR_REC_2.ADR_GROUP),',',
+          TRIM(ARCH_DIR_REC_2.ADR_MODULE),',') ((4)A);
+     PUT FILE(CNTLFL) EDIT(
+           TRIM(ARCH_DIR_REC_2.ADR_SUB_GROUP),',',
+           TRIM(ARCH_DIR_REC_2.ADR_TYPE),',',
+           TRIM(ARCH_DIR_REC_2.ADR_VERSION),'),')  ((6)A);
+     PUT SKIP FILE(CNTLFL) EDIT
+                   ( '  REPLACE=N,ALIASES=Y,CHKALIAS=Y') (A);
+     CALL READ_FILE_2;
+ END KEY_1_GT_KEY_2;
+
+ READ_FILE_1:PROC;
+     READ FILE(FILE1) INTO(ARCH_DIR_REC);
+     EOF_1 = EOF_1 | (ARCH_DIR_REC.ADR_REC_ID ¬= '1');
+     IF EOF_1 THEN
+        FILE_1_KEY = HIGH(45);
+     ELSE
+        RECS_IN_1 = RECS_IN_1 + 1;
+ END READ_FILE_1;
+ READ_FILE_2:PROC;
+     READ FILE(FILE2) INTO(ARCH_DIR_REC_2);
+     EOF_2 = EOF_2 | (ARCH_DIR_REC_2.ADR_REC_ID ¬= '1');
+     IF EOF_2 THEN
+        FILE_2_KEY = HIGH(45);
+     ELSE
+        RECS_IN_2 = RECS_IN_2 + 1;
+ END READ_FILE_2;
+ END COMPARE_FILES;
+
+1PROCESS_ARCHIVE:PROC(ARCH_DDN,OUTFILE);
+     DECLARE ARCH_DDN              CHAR(8),
+             OUTFILE               FILE;
+     DECLARE (RECS_IN,RECS_OUT)    FIXED BINARY(31) ALIGNED INIT(0);
+     DECLARE MORE_DATA             BIT(1) ALIGNED INIT('1'B);
+
+     OPEN FILE(OUTFILE) OUTPUT;
+
+     CALL ARCH_OPEN;
+
+     CALL ARCH_START_BROWSE;
+
+     CALL IHESRTD(SORT_STMT,RECORD_STMT,100000,SORT_RC,
+                  SORT_INPUT, SORT_OUTPUT);
+
+     IF SORT_RC > 0 THEN
+     DO;
+         PUT SKIP LIST('SORT_RC',SORT_RC);
+         PUT SKIP LIST(RECS_IN,RECS_OUT);
+     END;
+
+     CALL ARCH_CLOSE;
+     CLOSE FILE(OUTFILE);
+
+ SORT_INPUT:PROC RETURNS(CHAR(49));
+
+     DECLARE SORT_REC         CHAR(49);
+     DECLARE 1 SR             BASED(SORT_REC_PTR),
+                 5  SR_REC_TYPE                 CHAR(1),
+                 5  (KEY_1,KEY_2,KEY_3,KEY_4)   CHAR(10),
+                 5  (SR_VERSION,SR_LEN)      FIXED BIN(31) UNALIGNED;
+
+         SORT_REC_PTR = ADDR(SORT_REC);
+ NEXT_REC:
+         CALL ARCH_READ_NEXT;
+         MORE_DATA = (VSIO_RETURN_CODE ¬= VSIO_RC_END_OF_FILE);
+         IF MORE_DATA THEN
+         DO;
+            RECS_IN=RECS_IN+1;
+            SELECT (UNSPEC(AR_REC_ID))
+                WHEN ('00010000'B)
+                    SR_REC_TYPE ='1';
+                WHEN ('00100000'B)
+                    SR_REC_TYPE ='2';
+                WHEN ('10000000'B)
+                    SR_REC_TYPE ='8';
+                OTHERWISE
+                    SR_REC_TYPE ='?';
+            ENDSELECT;
+            IF SR_REC_TYPE ¬= '1' THEN
+                GO TO NEXT_REC;
+            IF FILTER_GROUP THEN
+            DO;
+               IF AR_GROUP ¬= GROUP_NAME THEN
+                  GO TO NEXT_REC;
+            END;
+            IF SORT_MEMB THEN
+            DO;
+               KEY_1             = AR_MODULE;
+               KEY_2             = AR_GROUP;
+            END;
+            ELSE
+            DO;
+               KEY_2             = AR_MODULE;
+               KEY_1             = AR_GROUP;
+            END;
+            KEY_3             = AR_SUB_GROUP;
+            KEY_4             = AR_TYPE;
+            SR_VERSION        = ABS(AR_VERSION+1);
+            SR_LEN            = VSFB_RECORD_LENGTH;
+            RECS_OUT=RECS_OUT+1;
+            CALL IHESARC(12);
+            RETURN(SORT_REC);
+         END;
+         ELSE
+         DO;
+            CALL IHESARC(8);
+            RETURN(SORT_REC);
+         END;
+
+  END SORT_INPUT;
+
+  SORT_OUTPUT:PROC(SORT_REC);
+      DECLARE (SORT_REC,SRP)         CHAR(49);
+
+      SORT_REC_PTR=ADDR(SORT_REC);
+      SRP=SORT_REC;
+
+      WRITE FILE(OUTFILE) FROM(SRP);
+
+      RECS_OUT=RECS_OUT+1;
+      CALL IHESARC(4);
+      RETURN;
+  END SORT_OUTPUT;
+
+
+ /********************************************************************
+ *********************************************************************
+ *********************************************************************
+ ********************** START OF VSAM IO *****************************
+ *********************************************************************
+ *********************************************************************
+ ********************************************************************/
+
+ /********************************************************************
+ *                                                                   *
+ *             VSAMIO DATA DECLARATIONS                              *
+ *                                                                   *
+ ********************************************************************/
+
+ %INCLUDE VSAMIO;
+ %INCLUDE VSAMIOFB;
+     DECLARE 1 ARCH_RECORD  STATIC,
+               5  AR_KEY,
+                  10  AR_REC_ID            CHAR(1),
+                  10  AR_SUB_KEY,
+                      15  AR_MODULE        CHAR(10),
+                      15  AR_GROUP         CHAR(10),
+                      15  AR_SUB_GROUP     CHAR(10),
+                      15  AR_TYPE          CHAR(10),
+                      15  AR_VERSION       FIXED BINARY(31,0) UNALIGNED,
+                  10  FILLER               CHAR(4),
+               5  AR_DATA                  CHAR(31951);
+
+ %INCLUDE ARCHDIR;
+ /********************************************************************
+ *                                                                   *
+ *    ARCHIVE_OPEN/CLOSE                                             *
+ *                                                                   *
+ ********************************************************************/
+
+ ARCH_OPEN:PROC;
+
+     VSFB_DDNAME = ARCH_DDN;
+     VSFB_ORGANIZATION = VSIO_KSDS;
+     VSFB_ACCESS = VSIO_DYNAMIC;
+     VSFB_MODE = VSIO_INPUT;
+     VSFB_RECORD_LENGTH = 32000;
+     VSFB_KEY_POSITION = 0;
+     VSFB_KEY_LENGTH = 49;
+     VSIO_COMMAND = VSIO_OPEN;
+
+     CALL VSAMIOP (VSIO_PARAMETER_BLOCK,
+                   VSIO_FILE_BLOCK,
+                   ARCH_RECORD);
+
+     IF (VSIO_RETURN_CODE ¬= VSIO_RC_SUCCESS) THEN
+     DO;
+        CALL DECODE_VSIO_RC(VSIO_RETURN_CODE);
+        SIGNAL ERROR;
+     END;
+ END ARCH_OPEN;
+
+ ARCH_CLOSE:PROC;
+     VSIO_COMMAND = VSIO_CLOSE;
+     CALL VSAMIOP (VSIO_PARAMETER_BLOCK,
+                   VSIO_FILE_BLOCK,
+                   ARCH_RECORD);
+     IF (VSIO_RETURN_CODE ¬= VSIO_RC_SUCCESS) THEN
+     DO;
+        CALL DECODE_VSIO_RC(VSIO_RETURN_CODE);
+        SIGNAL ERROR;
+     END;
+ END ARCH_CLOSE;
+1/********************************************************************
+ *                                                                   *
+ *    ARCH_START_BROWSE                                              *
+ *  - THIS MODULE WILL POSITION THE FILE FOR SEQUENTIAL ACCESS       *
+ *                                                                   *
+ ********************************************************************/
+
+ ARCH_START_BROWSE:PROC;
+     VSIO_COMMAND = VSIO_START_NOTLESS;
+     AR_REC_ID =  LOW(1);
+     AR_MODULE,AR_GROUP,AR_SUB_GROUP,AR_TYPE=LOW(10);
+
+     CALL VSAMIOP (VSIO_PARAMETER_BLOCK,
+                   VSIO_FILE_BLOCK,
+                   ARCH_RECORD);
+
+     IF (VSIO_RETURN_CODE ¬= VSIO_RC_SUCCESS) THEN
+     DO;
+        CALL DECODE_VSIO_RC(VSIO_RETURN_CODE);
+        SIGNAL ERROR;
+     END;
+ END ARCH_START_BROWSE;
+1/********************************************************************
+ *                                                                   *
+ *    ARCH_READ_NEXT                                                 *
+ *  - THIS MODULE WILL READ THE NEXT RECORD                          *
+ *                                                                   *
+ ********************************************************************/
+
+ ARCH_READ_NEXT:PROC;
+     VSIO_COMMAND = VSIO_READ;
+     VSFB_RECORD_LENGTH = 32000;
+
+     CALL VSAMIOP (VSIO_PARAMETER_BLOCK,
+                   VSIO_FILE_BLOCK,
+                   ARCH_RECORD);
+   /*  IF UNSPEC(AR_REC_ID) = '00010000'B THEN
+        PUT SKIP DATA(AR_SUB_KEY,VSFB_RECORD_LENGTH); */
+     IF (VSIO_RETURN_CODE = VSIO_RC_SUCCESS) |
+        (VSIO_RETURN_CODE = VSIO_RC_END_OF_FILE) THEN  ;
+     ELSE
+     DO;
+        CALL DECODE_VSIO_RC(VSIO_RETURN_CODE);
+        SIGNAL ERROR;
+     END;
+ END ARCH_READ_NEXT;
+
+ %INCLUDE VSAMIORC;
+
+ /********************************************************************
+ *********************************************************************
+ *********************************************************************
+ *********************** END OF VSAM IO ******************************
+ *********************************************************************
+ *********************************************************************
+ ********************************************************************/
+ /* ++++++++++++++++++++++++++++++++++++++++++++++++++++++++ */
+
+ END PROCESS_ARCHIVE;
+ END ARCHCMP;

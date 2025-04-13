@@ -1,0 +1,266 @@
+//SLIMCL   PROC SOUT='*',   DEFAULT SYSOUT CLASS
+//             CMD=,
+//             HLQ=,
+//             PROJECT=,
+//             MODULE=,            MODULE TO BE COMPILED
+//             DESC=,
+//             IN=NULLFILE,        PDS WITH MEMBER TO COMPILE
+//             COPY1='SYS1.MACLIB',
+//             COPY2='SYS1.MACLIB',
+//             COPY3='SYS1.MACLIB',
+//             COPY4='SYS1.MACLIB',
+//*            COPYBUF=19040,      DEFAULT FOR 3350 DASD
+//             COPYBUF=27920,      DEFAULT FOR 3390 DASD TK5
+//             LOADLIB=NULLFILE,   PDS TO GET LKED OUTPUT
+//             LOADMOD=NULLFILE,   MEM IN PDS TO GET LKED OUTPUT
+//             NCAL=,
+//             NCALIB1='SYS1.PL1LIB',
+//             NCALIB2='SYS1.PL1LIB',
+//             COBLIB='SYS1.COBLIB',
+//             PLILIB='SYS1.PL1LIB',
+//             FORTLIB='SYS1.FORTLIB',
+//             PLIMAC='',
+//             PLISORT='0,EQ',     PLI WITH INTERNAL SORT '5,GT'
+//             LANG=,      3 CHARACTER CODE FOR LANG TYPE
+//             LVL=        LANG LEVEL IF MORE THAN 1
+//********************************************************************
+//*
+//*  SLIMCLS - COMPILE, LINK A MODULE FROM A SLIM PROJECT
+//*
+//*===> NOTE - THIS IS BASICALY THE SLIMCLS PROC EXCEPT THE
+//*===> THE RESULTS ARE NOT STORED IN AN ARCHIVE.
+//*
+//********************************************************************
+//********************************************************************
+//*
+//*  SET THE RET CODE FOR LANG
+//*
+//********************************************************************
+//*
+//S0      EXEC PGM=SETRC,PARM=('3&LANG.PLICOBASMFOR')
+//S0A     EXEC PGM=JOBABEND,COND=(0,NE,S0)
+//S1      EXEC PGM=SETRC,PARM=('4&NCAL.NCALCALL')
+//S1A     EXEC PGM=JOBABEND,COND=(0,NE,S1)
+//********************************************************************
+//*
+//*  COPY THE SOURCE PROGRAM - TO ALLOW IN STREAM DD * FILES
+//*
+//********************************************************************
+//IN       EXEC PGM=IEBGENER
+//SYSPRINT DD  SYSOUT=*
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DDNAME=SOURCE
+//SYSUT2   DD  DSN=&&SOURCE,DISP=(NEW,PASS),
+//             UNIT=WORK,SPACE=(TRK,(10,10),RLSE),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=3120)
+//SOURCE   DD  DSN=&IN(&MODULE),DISP=SHR
+//********************************************************************
+//*
+//*  COMPILE AN ASSEMBLER PROGRAM
+//*
+//********************************************************************
+//*
+//ASM      EXEC PGM=IFOX00,PARM='OBJ,NODECK',REGION=128K,
+//             COND=(3,NE,S0)
+//SYSLIB   DD   DSN=&COPY1,DISP=SHR,DCB=BUFSIZE=&COPYBUF
+//         DD   DSN=&COPY2,DISP=SHR
+//         DD   DSN=&COPY3,DISP=SHR
+//         DD   DSN=&COPY4,DISP=SHR
+//         DD   DSN=SYS1.AMODGEN,DISP=SHR
+//SYSUT1   DD   DSN=&&SYSUT1,UNIT=SYSSQ,SPACE=(1700,(600,100)),
+//             SEP=(SYSLIB)
+//SYSUT2   DD   DSN=&&SYSUT2,UNIT=SYSSQ,SPACE=(1700,(300,50)),
+//             SEP=(SYSLIB,SYSUT1)
+//SYSUT3   DD   DSN=&&SYSUT3,UNIT=SYSSQ,SPACE=(1700,(300,50))
+//SYSPRINT DD   DSN=&&SYSOUT,DISP=(NEW,PASS,DELETE),
+//             UNIT=VIO,SPACE=(TRK,(100,100),RLSE),
+//             DCB=BLKSIZE=1089
+//SYSGO    DD   DSN=&&OBJSET,UNIT=SYSSQ,SPACE=(80,(200,50)),
+//             DISP=(NEW,PASS)
+//SYSIN    DD   DSN=&&SOURCE,DISP=(OLD,PASS)
+//*
+//ASMPRT  EXEC PGM=IEBGENER,COND=((0,EQ,ASM),(3,NE,S0))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//ASMA    EXEC PGM=JOBABEND,COND=((0,EQ,ASM),(3,NE,S0))
+//********************************************************************
+//*
+//*  COMPILE A COBOL PROGRAM
+//*
+//********************************************************************
+//*
+//COB  EXEC  PGM=IKFCBL00,COND=(2,NE,S0),
+//           PARM='LIB,LOAD,SUPMAP,SIZE=2048K,BUF=1024K'
+//SYSPRINT DD DSN=&&SYSOUT,DISP=(NEW,PASS,DELETE),
+//            UNIT=VIO,SPACE=(TRK,(100,100),RLSE)
+//SYSUT1 DD UNIT=SYSDA,SPACE=(460,(700,100))
+//SYSUT2 DD UNIT=SYSDA,SPACE=(460,(700,100))
+//SYSUT3 DD UNIT=SYSDA,SPACE=(460,(700,100))
+//SYSUT4 DD UNIT=SYSDA,SPACE=(460,(700,100))
+//SYSLIN DD DSNAME=&OBJSET,DISP=(NEW,PASS),UNIT=SYSDA,
+//             SPACE=(80,(500,100))
+//SYSPUNCH DD DUMMY
+//SYSLIB DD DSN=&COPY1,DISP=SHR,DCB=BUFSIZE=&COPYBUF
+//       DD DSN=&COPY2,DISP=SHR
+//       DD DSN=&COPY3,DISP=SHR
+//       DD DSN=&COPY4,DISP=SHR
+//SYSIN    DD   DSN=&&SOURCE,DISP=(OLD,PASS)
+//*
+//COBPRT  EXEC PGM=IEBGENER,COND=((5,GT,COB),(2,NE,S0))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//COBA    EXEC PGM=JOBABEND,COND=((5,GT,COB),(2,NE,S0))
+//*
+//********************************************************************
+//*
+//*  COMPILE A FORTRAN PROGRAM
+//*
+//********************************************************************
+//*
+//FOR      EXEC PGM=SETRC,COND=(4,NE,S0),PARM='1&LVL.GH'
+//FORA1    EXEC PGM=JOBABEND,COND=((4,NE,S0),(0,NE,FOR))
+//*
+//FORG     EXEC PGM=IEYFORT,COND=((4,NE,S0),(1,NE,FOR))
+//SYSPRINT DD DSN=&&SYSOUT,DISP=(NEW,PASS,DELETE),
+//            UNIT=VIO,SPACE=(TRK,(100,100),RLSE)
+//SYSPUNCH DD  DUMMY
+//SYSLIN   DD  DSNAME=&OBJSET,DISP=(NEW,PASS),UNIT=SYSDA,
+//             SPACE=(80,(200,100),RLSE),DCB=BLKSIZE=80
+//SYSIN    DD  DSN=&&SOURCE,DISP=(OLD,PASS)
+//*
+//FORGPRT EXEC PGM=IEBGENER,COND=((4,NE,S0),(1,NE,FOR),(4,LT,FORG))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//FORGA   EXEC PGM=JOBABEND,COND=((4,NE,S0),(1,NE,FOR),(4,LT,FORG))
+//*
+//FORH     EXEC PGM=IEKAA00,COND=((4,NE,S0),(2,NE,FOR))
+//SYSPRINT DD  SYSOUT=&SOUT
+//SYSPUNCH DD  DUMMY
+//SYSLIN   DD  DSNAME=&OBJSET,UNIT=SYSDA,DISP=(NEW,PASS),
+//             SPACE=(400,(200,50),RLSE)
+//SYSIN    DD  DSN=&&SOURCE,DISP=(OLD,PASS)
+//*
+//FORHPRT EXEC PGM=IEBGENER,COND=((4,NE,S0),(2,NE,FOR),(4,LT,FORH))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//FORHA   EXEC PGM=JOBABEND,COND=((4,NE,S0),(2,NE,FOR),(4,LT,FORH))
+//********************************************************************
+//*
+//*  COMPILE A PL/I PROGRAM
+//*
+//********************************************************************
+//*
+//PLI      EXEC PGM=IEMAA,COND=(1,NE,S0),
+//         PARM=('LOAD,NODECK,&PLIMAC.MACRO,EXTDIC')
+//SYSPRINT DD DSN=&&SYSOUT,DISP=(NEW,PASS,DELETE),
+//            UNIT=VIO,SPACE=(TRK,(100,100),RLSE)
+//SYSLIN   DD  DSNAME=&&OBJSET,DISP=(NEW,PASS),UNIT=SYSSQ,
+//             SPACE=(CYL,(5,5))
+//SYSUT3  DD  DSNAME=&&SYSUT3,UNIT=SYSDA,SPACE=(80,(250,250)),
+//             DCB=BLKSIZE=80
+//SYSUT1   DD  DSNAME=&&SYSUT1,UNIT=SYSDA,SPACE=(1024,(60,60),,CONTIG),
+//             SEP=(SYSUT3,SYSLIN),DCB=BLKSIZE=1024
+//SYSLIB   DD  DSN=&COPY1,DISP=SHR,DCB=BUFSIZE=400  MAX BLKSIZE FOR PL1
+//         DD  DSN=&COPY2,DISP=SHR
+//         DD  DSN=&COPY3,DISP=SHR
+//SYSIN    DD  DSN=&&SOURCE,DISP=(OLD,PASS)
+//*
+//PLIPRT  EXEC PGM=IEBGENER,COND=((5,GT,PLI),(1,NE,S0))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//PLIA    EXEC PGM=JOBABEND,COND=((5,GT,PLI),(1,NE,S0))
+//********************************************************************
+//*
+//*  LINK EDIT THE PROGRAM
+//*
+//********************************************************************
+//*
+//LKEDNCAL EXEC PGM=IEWL,PARM=(XREF,LET,LIST,NCAL),REGION=128K,
+//             COND=(1,NE,S1)
+//SYSLIN   DD   DSN=&&OBJSET,DISP=(OLD,DELETE)
+//         DD   DDNAME=SYSIN
+//SYSLMOD  DD   DSN=&LOADLIB(&LOADMOD),DISP=SHR
+//SYSUT1   DD   DSN=&&SYSUT1,UNIT=(SYSDA,SEP=(SYSLIN,SYSLMOD)),
+//             SPACE=(1024,(50,20))
+//SYSPRINT DD DSN=&&LKEDOUT,DISP=(NEW,PASS,DELETE),
+//            UNIT=VIO,SPACE=(TRK,(10,10),RLSE)
+//*
+//NCALPRT EXEC PGM=IEBGENER,COND=((1,NE,S1),(5,GT,LKEDNCAL))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&LKEDOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//NCALA   EXEC PGM=JOBABEND,COND=((1,NE,S1),(5,GT,LKEDNCAL))
+//*
+//LKED     EXEC PGM=IEWL,PARM=(XREF,LET,LIST),REGION=128K,
+//             COND=(2,NE,S1)
+//SYSLIN   DD   DSN=&&OBJSET,DISP=(OLD,DELETE)
+//         DD   DDNAME=SYSIN
+//SYSLMOD  DD   DSN=&LOADLIB(&LOADMOD),DISP=SHR
+//SYSLIB   DD   DSN=&COBLIB,DISP=SHR
+//         DD   DSN=&PLILIB,DISP=SHR
+//         DD   DSN=&FORTLIB,DISP=SHR
+//         DD   DSN=&NCALIB1,DISP=SHR
+//         DD   DSN=&NCALIB2,DISP=SHR
+//SYSUT1   DD   DSN=&&SYSUT1,UNIT=(SYSDA,SEP=(SYSLIN,SYSLMOD)),
+//             SPACE=(1024,(50,20))
+//SYSPRINT DD DSN=&&LKEDOUT,DISP=(NEW,PASS,DELETE),
+//            UNIT=VIO,SPACE=(TRK,(10,10),RLSE)
+//*
+//LKEDPRT EXEC PGM=IEBGENER,COND=((2,NE,S1),(&PLISORT,LKED))
+//SYSPRINT DD  SYSOUT=Z
+//SYSIN    DD  DUMMY
+//SYSUT1   DD  DSN=&&LKEDOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=*
+//*
+//LKEDA   EXEC PGM=JOBABEND,COND=((2,NE,S1),(&PLISORT,LKED))
+//********************************************************************
+//*
+//*  NOW STANDARDIZE THE LISTINGS AND LINK MAPS
+//*
+//********************************************************************
+//*
+//MYGEN1  EXEC PGM=MYGENER
+//SYSPRINT DD  SYSOUT=&SOUT
+//SYSUT1   DD  DSN=&&SYSOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  DSN=&&LISTING,DISP=(NEW,PASS,DELETE),
+//             UNIT=SYSDA,SPACE=(TRK,(100,100),RLSE),
+//             DCB=(RECFM=VBA,LRECL=137,BLKSIZE=1370)
+//*
+//MYGEN2  EXEC PGM=MYGENER
+//SYSPRINT DD  SYSOUT=&SOUT
+//SYSUT1   DD  DSN=&&LKEDOUT,DISP=(OLD,PASS)
+//SYSUT2   DD  DSN=&&LISTING,DISP=(MOD,PASS,DELETE)
+//*
+//PRINTIT  EXEC PGM=IEBGENER
+//SYSIN    DD  DUMMY
+//SYSPRINT DD  SYSOUT=&SOUT
+//SYSUT1   DD  DSN=&&LISTING,DISP=(OLD,PASS)
+//SYSUT2   DD  SYSOUT=&SOUT
+//********************************************************************
+//*
+//*===> NOTE - THIS IS BASICALY THE SLIMCLS PROC EXCEPT THE
+//*===> THE RESULTS ARE NOT STORED IN AN ARCHIVE.
+//*===> SO THIS IS WHERE THE ARCHIVE STEP IS IN PROC SLIMCLS TO
+//*===> RUN ARCHIVER TO STORE THE SOURCE, LISTINGS AND LOAD MODULES
+//*
+//********************************************************************
+//*
+//ARCHIVER EXEC PGM=IEFBR14,              DO NOTHING!
+//    PARM='&CMD,&HLQ,&MODULE,&PROJECT,&DESC,&LANG,NOCALL'
+//*

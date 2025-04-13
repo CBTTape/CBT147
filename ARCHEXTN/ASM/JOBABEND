@@ -1,0 +1,17 @@
+         TITLE 'JOBABEND - FORCE JOB TO USER ABEND'
+***********************************************************************
+*                                                                     *
+*    THIS SECTION INITITIALIZES THE PROGRAM                           *
+*    FILES ARE OPENED AND BASE REGISTERS LOADED                       *
+*                                                                     *
+***********************************************************************
+JOBABEND ESTART TYPE=CSECT,DESC='JOBABEND PROGRAM',VER='1.0',          *
+               REGS=YES,BASE=R12
+*
+         WTO   'JOBABEND - DUE TO COND CODES',ROUTCDE=(2,11)
+         ABEND 1234,,,USER
+*---------------------------------------------------------------------*
+* RETURN TO SYSTEM PROGRAM WITH ZERO RETURN CODE 0 - NOT              *
+*---------------------------------------------------------------------*
+         ERETURN RC=0
+         END   JOBABEND

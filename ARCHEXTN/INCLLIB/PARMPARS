@@ -1,0 +1,36 @@
+ /********************************************************************
+ *                                                                   *
+ *   PARM-PARSE - ROUTINE TO PARSE EXEC PARM INTO WORDS              *
+ *                                                                   *
+ ********************************************************************/
+
+ PARM_PARSE:PROC(EXEC_PARM,OPTION_WORDS,OPTION_COUNT);
+     DECLARE EXEC_PARM           CHAR(100) VARYING,
+             OPTION_WORDS(*)     CHAR(8),
+             OPTION_COUNT        FIXED BINARY;
+     DECLARE OPTION_WORK         CHAR(100) VARYING,
+             OPTION_CONTINUE     BIT(1) ALIGNED;
+     DECLARE (COMMA,WORD_LEN)    FIXED BINARY;
+     OPTION_WORK = EXEC_PARM;
+     OPTION_CONTINUE = (LENGTH(EXEC_PARM) > 0);
+     OPTION_COUNT = 0;
+     OPTION_WORDS(*)=(8)' ';
+     DO WHILE(OPTION_CONTINUE & OPTION_COUNT < HBOUND(OPTION_WORDS,1));
+        COMMA = INDEX(OPTION_WORK,',');
+        IF COMMA = 0 THEN
+           WORD_LEN = LENGTH(OPTION_WORK);
+        ELSE
+           WORD_LEN = COMMA - 1;
+        IF WORD_LEN <= 0 THEN
+        DO;
+           WORD_COUNT = -1; /* INVALID SYNTAX */
+           RETURN;
+        END;
+        OPTION_COUNT = OPTION_COUNT + 1;
+        OPTION_WORDS(OPTION_COUNT) = SUBSTR(OPTION_WORK,1,WORD_LEN);
+        IF COMMA = 0 THEN
+           OPTION_CONTINUE = '0'B;
+        ELSE
+           OPTION_WORK = SUBSTR(OPTION_WORK,COMMA+1);
+     END;
+ END PARM_PARSE;

@@ -1,0 +1,86 @@
+//RESTCBT  JOB CLASS=A,MSGCLASS=A,MSGLEVEL=(1,1),NOTIFY=&SYSUID,
+//         REGION=512K, USER=HERC01,PASSWORD=CUL8TR
+//********************************************************************
+//*  REMOVE space before user in job if so desired.
+//*  Change MSGCLASS above is so desired.
+//*  Change 'alias' into your desired hlq/tsoid.
+//*  Change 'volser' into your volume serial.
+//*  Change 'your.upload.xmi' in the dataset where you uploaded the
+//*                           xmi file.
+//********************************************************************
+//*
+//*  THIS JOB RECEIVES THE ARCHEXTN SOFTWARE FROM A XMI FILE.
+//*
+//*  THE SOFTWARE RESIDES IN 8 DATASETS.  BY DEFAULT, THE DATASETS
+//*  ARE PREFIXED WITH 'ARCHEXTN.V1R1M0' ON volser.
+//*
+//*
+//*   .ASM     CONTAINS BAL DATA DEFINITIONS FOR PANELS FROM ARCHEXTN.
+//*   .INCLLIB CONTAINS REQUIRED PL/I INCLUDES FOR ARCHEXTN.
+//*   .JCL     CONTAIN ALL RELATED JCL
+//*   .LOADLIB CONTAINS THE EXECUTABLE CODE.
+//*   .MACLIB  CONTAINS THE REQUIRED MACROS.
+//*   .NCALIB  CONTAINS THE COMPILE SUBROUTINE CODE.
+//*   .PLI     CONTAINS PL/I DATA DEFINITIONS FOR PANELS FROM ARCHEXTN.
+//*   .PROCLIB CONTAINS ALL THE PROCS FOR EXECUTING ARCHEXTN PROGRAMS.
+//*
+//********************************************************************
+//* -------------------------------------------------------*
+//* ENSURE PARENT HLQ ALIAS IS DECLARED
+//* -------------------------------------------------------*
+//*DEFALIAS EXEC PGM=IDCAMS
+//*SYSPRINT DD  SYSOUT=*
+//*SYSIN    DD  *
+//* PARM GRAPHICS(CHAIN(SN))
+//* LISTCAT ALIAS  ENT(ARCHEXTN)
+//* /* REVIEW AND MODIFY CATALOG NAME BELOW */
+//* IF LASTCC NE 0 THEN -
+//*    DEFINE ALIAS(NAME(ARCHEXTN) RELATE(SYS1.UCAT.TK5))
+//********************************************************************
+//*
+//*  DELETE ARCHEXTN DATASETS
+//*
+//********************************************************************
+//STEP01  EXEC PGM=IDCAMS
+//SYSPRINT DD SYSOUT=*
+//SYSIN    DD *
+ /*  delete current version   */
+ DELETE 'alias.ASM'     NONVSAM PURGE
+ DELETE 'alias.INCLLIB' NONVSAM PURGE
+ DELETE 'alias.CNTL'    NONVSAM PURGE
+ DELETE 'alias.LOADLIB' NONVSAM PURGE
+ DELETE 'alias.MACLIB'  NONVSAM PURGE
+ DELETE 'alias.NCALIB'  NONVSAM PURGE
+ DELETE 'alias.PDSXMI'  NONVSAM PURGE
+ DELETE 'alias.PLI'     NONVSAM PURGE
+ DELETE 'alias.PROCLIB' NONVSAM PURGE
+ DELETE 'alias.README'  NONVSAM PURGE
+ SET LASTCC = 0
+ SET MAXCC = 0
+//*
+//STEP02 EXEC PGM=IKJEFT01,REGION=4096K
+//*SYSHELP  DD  DISP=SHR,DSN=SYS1.HELP
+//*SYSPROC  DD  DISP=SHR,DSN=SYS1.CMDPROC
+//SYSTSPRT DD SYSOUT=*
+//SYSTSIN  DD *
+ RECEIVE DATASET('alias.PDSXMI') -
+         INDATASET('your.upload.xmi') VOL(volser)
+ RECEIVE DATASET('alias.ASM') -
+         INDATASET('alias.PDSXMI(ASM)') VOL(volser)
+ RECEIVE DATASET('alias.INCLLIB') -
+         INDATASET('alias.PDSXMI(INCLLIB)') VOL(volser)
+ RECEIVE DATASET('alias.CNTL') -
+         INDATASET('alias.PDSXMI(JCL)') VOL(volser)
+ RECEIVE DATASET('alias.LOADLIB') -
+         INDATASET('alias.PDSXMI(LOADLIB)') VOL(volser)
+ RECEIVE DATASET('alias.MACLIB') -
+         INDATASET('alias.PDSXMI(MACLIB)') VOL(volser)
+ RECEIVE DATASET('alias.NCALIB') -
+         INDATASET('alias.PDSXMI(NCALIB)') VOL(volser)
+ RECEIVE DATASET('alias.PLI') -
+         INDATASET('alias.PDSXMI(PLI)') VOL(volser)
+ RECEIVE DATASET('alias.PROCLIB') -
+         INDATASET('alias.PDSXMI(PROCLIB)') VOL(volser)
+ RECEIVE DATASET('alias.README') -
+         INDATASET('alias.PDSXMI(README)') VOL(volser)
+//

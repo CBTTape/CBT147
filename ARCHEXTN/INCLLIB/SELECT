@@ -1,0 +1,168 @@
+ /*********************************************************************
+
+       THE SELECT, WHEN, BREAK, OTHERWISE AND ENDSELECT MACROS
+                   FOR USE WITH PL/I (F).
+
+   THESE MACROS EMULATE THE PL/I SELECT STATEMENT WHICH WAS NOT
+   IMPLEMENTED IN THE PL/I (F) COMPILER.
+
+   TO USE, %INCLUDE THIS MEMBER IN YOUR PROGRAM AND COMPILE WITH
+   THE MACRO OPTION. (NOMACRO IS THE DEFAULT).
+
+   CODE THE SELECT:
+
+       SELECT (A)                 SELECT (TRUE)
+       WHEN(1)                    WHEN(A=1)
+         CALL SUB1;                 CALL SUB1;
+       WHEN(X)                    WHEN(A=X)
+         CALL XRTN(X);              CALL XTRN(X);
+         X=X+A;                     X=X+A;
+       ENDSELECT                  OTHERWISE
+                                    PUT SKIP LIST('ERROR');
+                                  ENDSELECT
+
+   NOTE - USING THE MACROS, THE ENDSELECT IS REQUIRED.
+
+   THE ALTERNATE SELECT WHEN BREAK IS ALSO SUPPORTED.  THIS ONE IS
+   POPULAR WITH C, C++, JAVA, ETC PROGRAMMERS.
+
+   THERE IS A COMPILE TIME VARIABLE DEFINED SELECT_TYPE.  BY DEFAULT
+   IT IS SET TO 0. THIS INDICATES UPON COMPLETION OF A WHEN BLOCK,
+   THE STATEMENT AFTER THE ENDSELECT WILL BE THE NEXT EXECUTED.
+   IF SELECT_TYPE IS SET TO 1, UPON COMPLETION OF A WHEN BLOCK, THE
+   NEXT WHEN WILL BE EXECUTED.  A BREAK MACRO IN A WHEN BLOCK
+   WILL CAUSE THE STATEMENT AFTER THE ENDSELECT TO BE THE NEXT
+   STATEMENT EXECUTED.
+   TO SWITCH TYPE, CODE A %SELECT_TYPE=1; OR %SELECT_TYPE=0;
+ **********************************************************************/
+
+ %DECLARE
+     SELECT    ENTRY (CHARACTER) RETURNS (CHARACTER),
+     WHEN      ENTRY (CHARACTER) RETURNS (CHARACTER),
+     OTHERWISE ENTRY             RETURNS (CHARACTER),
+     BREAK     ENTRY             RETURNS (CHARACTER),
+     ENDSELECT ENTRY             RETURNS (CHARACTER);
+
+ %DECLARE
+      WHEN_CTR            FIXED,
+      SELECT_CTR          FIXED,
+      SELECT_TYPE         FIXED,
+      SELECT_NAME         CHARACTER,
+     (SELEXPR,SPACES)     CHARACTER;
+
+   %WHEN_CTR = 0;
+   %SELECT_CTR = 0;
+   %SELECT_TYPE = 0;
+   %SELECT_NAME = ' ';
+   %SPACES = '
+             ';
+ /*********************************************************************/
+ %SELECT :
+     PROCEDURE (A) RETURNS (CHARACTER);
+
+       DECLARE  (A,L1,L2) CHARACTER;
+
+       IF WHEN_CTR > 0 THEN
+           RETURN('/*** THE SELECT MACRO CANNOT BE NESTED ***/');
+
+       IF SELECT_TYPE < 0 | SELECT_TYPE > 1 THEN
+           RETURN('/*** SELECT_TYPE MUST BE 0 OR 1 ***/');
+
+       SELECT_CTR = SELECT_CTR+1;
+       SELECT_NAME = FIX2STR(SELECT_CTR);
+       SELECT_NAME = ' ENDSELECT_MACRO' || SELECT_NAME;
+       SELEXPR = A;
+       WHEN_CTR = 1;
+
+       L1 = '       /*';
+       L2 = 'SELECT (' || SELEXPR || ')   */ DO;';
+
+       L1 = SUBSTR(L1||SPACES,1,71);
+
+       RETURN(L1||L2);
+ %END;
+ /*********************************************************************/
+ %WHEN :
+     PROCEDURE (A) RETURNS (CHARACTER);
+
+       DECLARE  (A,L1,L2,L4,L5) CHARACTER;
+
+       IF WHEN_CTR > 1 THEN
+       DO;
+          IF SELECT_TYPE = 0 THEN
+             L1='             GO TO ' || SELECT_NAME || '; END; /*';
+          ELSE
+             L1='             END; /*';
+          L2='WHEN (' || A || ')    */';
+       END;
+       ELSE
+       IF WHEN_CTR = 1 THEN
+       DO;
+          L1='                 /*';
+          L2='WHEN (' || A || ')    */';
+       END;
+       ELSE
+          RETURN('/** WHEN WITHOUT A SELECT **/');
+
+       WHEN_CTR = WHEN_CTR + 1;
+
+       IF SELEXPR = 'TRUE' THEN
+          L4='         IF (' || A || ') THEN';
+       ELSE
+          L4='         IF (' || SELEXPR || ')=(' || A || ') THEN';
+       L5='                      DO;';
+
+       L1 = SUBSTR(L1||SPACES,1,71);
+       L2 = SUBSTR(L2||SPACES,1,71);
+       L4 = SUBSTR(L4||SPACES,1,71);
+
+       RETURN(L1||L2||L4||L5);
+ %END ;
+ /*********************************************************************/
+ %BREAK :
+     PROCEDURE RETURNS (CHARACTER);
+       DECLARE  (L1,L2) CHARACTER;
+       IF SELECT_TYPE = 0 THEN
+          RETURN('/*** BREAK NOT ALLOWED IN THIS SELECT TYPE ***/');
+       L1='                   /*';
+       L2='BREAK         */   GO TO ' || SELECT_NAME ||';';
+       L1 = SUBSTR(L1||SPACES,1,71);
+
+       RETURN(L1||L2);
+ %END;
+ /*********************************************************************/
+ %OTHERWISE :
+     PROCEDURE RETURNS (CHARACTER);
+
+       DECLARE  (L1,L2) CHARACTER;
+
+       IF WHEN_CTR < 1 THEN
+          RETURN('/** OTHERWISE OUT OF SEQUENCE **/');
+
+       L1='              END; /*';
+       L2='OTHERWISE     */  ELSE DO;';
+
+       L1 = SUBSTR(L1||SPACES,1,71);
+       L2 = SUBSTR(L2||SPACES,1,71);
+
+       RETURN(L1||L2);
+ %END;
+ /*********************************************************************/
+ %ENDSELECT :
+     PROCEDURE RETURNS (CHARACTER);
+
+       DECLARE  (L1,L2) CHARACTER;
+
+       IF WHEN_CTR < 1 THEN
+          RETURN('/** ENDSELECT OUT OF SEQUENCE **/');
+
+       WHEN_CTR = 0;
+
+       L1='              END; /*';
+       L2='ENDSELECT     */  END;';
+
+       L2 = L2 || SELECT_NAME || ':;';
+       L1 = SUBSTR(L1||SPACES,1,71);
+
+       RETURN(L1||L2);
+ %END;

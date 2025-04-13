@@ -1,0 +1,49 @@
+ /*********************************************************************
+ *                                                                    *
+ *   RND - RANDOM NUMBER GENERATOR                                    *
+ *                                                                    *
+ *   THIS FUNCTION GENERATES 'RANDOM' NUMBERS BETWEEN 0.0 AND 1.0     *
+ *                                                                    *
+ *   NOTE - THIS IS A SIMPLE RANDOM VALUE THAT IS NOT CONSIDERED      *
+ *          STATISTICALY A RANDOM NUMBER.  A STATISTICALY RANDOM      *
+ *          REQUIRES MULTIPLE RANDOM VALUES BE GENERATED, A MEAN BE   *
+ *          DETERMINED AND STUFF BEYOND THE SCOPE OF THIS MODULE.     *
+ *                                                                    *
+ *   PASSING A SEED_VALUE OF ZERO RETAINS CURRENT SEED (IY)           *
+ *   PASSING A SEED_VALUE >  ZERO, SETS CURRENT SEED TO SEED_VALUE    *
+ *                                 FOR OPTIMAL RESULTS, SEED_VALUE    *
+ *                                 SHOULD BE >= 1000.                 *
+ *   PASSING A SEED_VALUE <  ZERO, SETS CURRENT SEED TO THE LAST 4    *
+ *                                 DIGITS OF THE CURRENT TIME.        *
+ *                                                                    *
+ **********************************************************************
+ *********************************************************************/
+    DECLARE RND ENTRY(FLOAT DECIMAL) RETURNS(FLOAT DECIMAL);
+ RND:PROC(SEED_VALUE) RETURNS(FLOAT DECIMAL);
+    DECLARE SEED_VALUE  FLOAT DECIMAL;
+    DECLARE YFL         FLOAT DECIMAL;
+    DECLARE ZERO        FLOAT DECIMAL STATIC INITIAL(0.0);
+    DECLARE BZERO       FIXED BINARY(31) STATIC INITIAL(0);
+    DECLARE (IX,IY)     FIXED BINARY(31) STATIC;
+    DECLARE RND_SEEDED  BIT(1) ALIGNED STATIC INITIAL('0'B);
+
+    IF SEED_VALUE > ZERO THEN
+       IY = SEED_VALUE;
+    ELSE IF SEED_VALUE < ZERO | (RND_SEEDED = '0'B)  THEN
+       IY = SUBSTR(TIME,4,6);    /* TIME IS HHMMSSTTT FORMAT */
+    IF MOD(IY,2) = BZERO THEN
+       IY = IY+1;
+    IX = IY;
+ (NOFIXEDOVERFLOW):
+    IY = IX * 65539;
+    IF IY < BZERO THEN
+    DO;
+ (NOFIXEDOVERFLOW):
+       IY = IY + 2147483647 + 1;
+    END;
+    RND_SEEDED='1'B;
+    YFL = IY;
+    YFL = YFL * .4656613E-9;
+    RETURN(YFL);
+ END RND;
+ /*******************************************************************/

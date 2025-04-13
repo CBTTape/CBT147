@@ -1,0 +1,32 @@
+//CLEANUP JOB CLASS=A,MSGCLASS=X,MSGLEVEL=(1,1),NOTIFY=&SYSUID,
+//        REGION=512K,USER=HERC01,PASSWORD=CUL8TR
+//********************************************************************
+//*                                                                  *
+//*   IF THE REST#### JOB COMPLETED SUCCESSULLY AND YOU WISH TO      *
+//*   COMMIT ARCHEXTN TO SYS2.LINKLIB, SUBMIT THIS JOB.              *
+//*                                                                  *
+//********************************************************************
+//*
+//STEP1  EXEC PGM=IEBCOPY
+//SYSPRINT DD SYSOUT=*
+//INPUT    DD DSN=ARCHEXTN.V1R2M0.PROCLIB,DISP=SHR
+//OUTPUT   DD DSN=SYS2.PROCLIB,DISP=SHR
+//SYSIN    DD *
+ COPY INDD=INPUT,OUTDD=OUTPUT
+ S M=((ARCHCOMP,,R))
+ S M=((ARCHDIR,,R))
+ S M=((ARCHRST,,R))
+ S M=((ARCHUTIL,,R))
+ S M=((SLIMCL,,R))
+//*
+//STEP2  EXEC PGM=IEBCOPY,COND=(0,NE,STEP1)
+//SYSPRINT DD SYSOUT=*
+//INPUT    DD DSN=ARCHEXTN.V1R2M0.LOADLIB,DISP=SHR
+//OUTPUT   DD DSN=SYS2.LINKLIB,DISP=SHR
+//SYSIN    DD *
+ COPY INDD=INPUT,OUTDD=OUTPUT
+ S M=((ARCHCOMP,,R))
+ S M=((ARCHDIR,,R))
+ S M=((ARCHRST,,R))
+ S M=((ARCHUTIL,,R))
+//*

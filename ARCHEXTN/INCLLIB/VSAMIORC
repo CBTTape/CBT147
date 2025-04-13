@@ -1,0 +1,40 @@
+1/********************************************************************
+ *                                                                   *
+ *   DECODE VSIO_RETURN_CODES                                        *
+ *                                                                   *
+ ********************************************************************/
+    DECLARE DECODE_VSIO_RC ENTRY RETURNS(CHAR(50) VARYING);
+-DECODE_VSIO_RC:PROC(VSIO_FB) RETURNS(CHAR(50) VARYING);
+    DECLARE VSIO_FB       FIXED BINARY;
+    DECLARE VSIO_TEXT     CHAR(50) VARYING;
+    SELECT (VSIO_FB)
+       WHEN(VSIO_RC_SUCCESS)
+          VSIO_TEXT = '';
+       WHEN(VSIO_RC_LOGIC_ERROR)
+          VSIO_TEXT = 'VSAMIOP LOGIC ERROR';
+       WHEN(VSIO_RC_END_OF_FILE)
+          VSIO_TEXT = 'VSAMIOP END OF FILE';
+       WHEN(VSIO_RC_UNKNOWN_COMMAND)
+          VSIO_TEXT = 'VSAMIOP UNKNOWN COMMAND';
+       WHEN(VSIO_RC_DATASET_ALREADY_OPEN)
+          VSIO_TEXT = 'VSAMIOP DATASET ALREADY OPEN';
+       WHEN(VSIO_RC_DATASET_NOT_OPEN)
+          VSIO_TEXT = 'VSAMIOP DATASET NOT OPEN';
+       WHEN(VSIO_RC_ORGANIZATION_UNKNOWN)
+          VSIO_TEXT = 'VSAMIOP ORGANIZATION UNKNOWN';
+       WHEN(VSIO_RC_ACCESS_UNKNOWN)
+          VSIO_TEXT = 'VSAMIOP ACCESS UNKNOWN';
+       WHEN(VSIO_RC_ORG_ACCESS_MISMATCH)
+          VSIO_TEXT = 'VSAMIOP ACCESS MISMATCH';
+       WHEN(VSIO_RC_MODE_UNKNOWN)
+          VSIO_TEXT = 'VSAMIOP MODE UNKNOWN';
+       WHEN(VSIO_RC_MODE_UNSUPPORTED)
+          VSIO_TEXT = 'VSAMIOP MODE UNSUPPORTED';
+       WHEN(VSIO_RC_DDNAME_BLANK)
+          VSIO_TEXT = 'VSAMIOP DDNAME BLANK';
+       OTHERWISE
+          PUT SKIP LIST('DECODING VSAMIOP UNKNOWN RETURN CODE');
+          SIGNAL ERROR;
+    ENDSELECT;
+    RETURN(VSIO_TEXT);
+ END DECODE_VSIO_RC;

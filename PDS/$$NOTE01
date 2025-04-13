@@ -1,0 +1,37 @@
+    Archiver 6.1.5
+Subject:  Archiver 6.1.5
+From:     <robprins2@kpnmail.nl>
+Date:     10/1/2023, 9:18 AM
+To:       "Sam Golob" <sbgolob@cbttape.org>
+
+Dear Sam,
+
+I found some issues in the Archiver.
+
+There were 2 real errors and 1 minor issue in the Archiver.
+
+These are the issues.
+
+Version 6.1.5: September 2023
+
+- Fix an ABEND0C4 in module ARCHRSPC by adding
+    MF=(G,GENWRK) in the TESTCB te restore the
+    reentrancy of the loadmodule.
+
+- Fix incorrout completion message after ALTER.
+
+- Fix detection of duplicate key in ARCHRSPC, to
+    avoid deletion of item if the newname exist in
+    ALTER (rename item).
+
+These notes are in @FILE147.
+
+Would you like to post the attached file onto CBT?
+(of course...!!!)
+
+Thank you in advance for your efforts.
+
+All the best of everything to you and your family.
+
+Met vriendelijke groet/With kind regards/Mit freundlichen
+Gruessen/Saludos Cordiales/Bien à vous

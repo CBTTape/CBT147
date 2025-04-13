@@ -1,0 +1,410 @@
+ /* ARCHDIR VERSION 1.0.0 - SORT AND REPORT INDEX FROM ARCHIVER */
+ ARCHDIR:PROC(CMD_OPT) OPTIONS(MAIN);
+     DECLARE (CMD_OPT) CHAR(100) VARYING;
+     DECLARE (OPTS,ITEM_OPT) CHAR(100) VARYING;
+0/********************************************************************
+  *                                                                  *
+  *  ARCHDIR - SORT AND PRINT INDEX REPORT FOR ARCHIVER VSAM FILE    *
+  *                                                                  *
+  *  THIS PROGRAM READS A ARCHIVER LIST FILE TO PRODUCE A REPORT OF  *
+  *  THE MEMBERS IN THE ARCHIVE.  A PARM IS PASSED TO ALTER HOW      *
+  *  THE REPORT WILL BE SORTED DIFFERENTLY THAN THE DEFAULT WAY      *
+  *  ARCHIVER REPORTS.                                               *
+  *                                                                  *
+  *  ALIAS WILL BE REPORTED AS STAND ALONE LIKE ARCHIVER DOES BUT    *
+  *  WILL ALSO BE LISTED AFTER THE ITEM THE ALIAS REFERS TO.         *
+  *                                                                  *
+  *  OPTIONS PASSED AS EXEC PARMS PROVIDE FOR FILTERING OF THE       *
+  *  RESULTS AS WELL AS PRINTING THE NOTES (IF ANY) ASSOCIATED       *
+  *  WITH A MEMBER.                                                  *
+  *                                                                  *
+  *  THE EXEC PARM MUST BE AT LEAST 5 CHARACTERS LONG.  THE FIRST    *
+  *  FIVE CHARACTERS MUST BE M,G,S,T,V (MEMBER,GROUP,SUBGROUP,       *
+  *  TYPE AND VERSION AS DESCRIBED IN THE MANUAL.  THE DEFAULT       *
+  *  IS GSMTV FOR A REPORT.                                          *
+  *                                                                  *
+  *  IF THERE IS MORE TO THE PARM, THE SIXTH CHARACTER MUST BE A     *
+  *  COMMA.  TWO KEYWORDS AS DEFINED IN THE ARCHIVER MANUAL CAN      *
+  *  FOLLOW.   THEY ARE ITEM AND NOTE.                               *
+  *                                                                  *
+  *                                                                  *
+  *                                                                  *
+  *  VERSION    DATE      COMMENTS                                   *
+  *  -------  ----------  -----------------------------------------  *
+  *  V1.0.0               INITIAL VERSION.  RENAMED FROM ARCHRPT     *
+  *                       TO ARCHDIR.                                *
+  *                                                                  *
+  *                                                                  *
+  *******************************************************************/
+
+  %INCLUDE FIX2STR;
+  %INCLUDE SELECT;
+  %INCLUDE FORMDAT;
+
+     DECLARE (ARCHRPT,SYSOUT)     SEQUENTIAL RECORD FILE ENV(F);
+     DECLARE  ARCHIN              STREAM OUTPUT FILE;
+     DECLARE (TRUE  INIT('1'B), FALSE  INIT('0'B)) BIT(1) ALIGNED;
+     DECLARE (EOF_SORT_IN  INIT('0'B)) BIT(1) ALIGNED;
+     DECLARE (RECS_IN,RECS_OUT)   FIXED BIN(31) ALIGNED INITIAL(0);
+     DECLARE TODAYS_DATE          CHAR(19);
+     DECLARE IHESRTD ENTRY(CHAR(27),            /* SORT STMT */
+                           CHAR(27),            /* RECORD STMT */
+                           FIXED BINARY(31,0),  /* MEM */
+                           FIXED BINARY(31,0),  /* RET CODE */
+                           ENTRY,               /* INPUT PROC */
+                           ENTRY);              /* OUTPUT PROC */
+     DECLARE SORT_STMT     CHAR(27)
+           INITIAL(' SORT FIELDS=(1,59,CH,A)   ');
+     DECLARE RECORD_STMT   CHAR(27)
+           INITIAL(' RECORD TYPE=F,LENGTH=(134) ');
+     DECLARE IHESARC ENTRY(FIXED BINARY(31,0));
+     DECLARE SORT_INPUT RETURNS(CHAR(134));
+     DECLARE SORT_RC    FIXED BINARY(31,0);
+
+     DECLARE SORT_REC         CHAR(134);
+     DECLARE 1 SR             BASED(SORT_REC_PTR),
+                 5  SR_COL_DATA(5)   CHAR(10),
+                 5  SR_REC_TYPE      CHAR(1),
+                 5  SR_NOTE_SEQ      CHAR(8),
+                 5  SR_DESC          CHAR(75);
+     DECLARE NEW_ALIAS               CHAR(75) VARYING;
+
+     DECLARE COLUMN_HEADINGS(5)      CHAR(10),
+             COL_ID                  CHAR(1),
+             COL_INDEX               FIXED BINARY ALIGNED;
+     DECLARE PAGE_NUM                FIXED BINARY ALIGNED INITIAL(1);
+     DECLARE VERSION_CHAR            PIC '(7)Z9';
+     DECLARE RE_READ_LINE_IN         BIT(1) ALIGNED INITIAL('0'B);
+     DECLARE 1 LINE_IN,
+               2 CC                  CHAR(1),
+               2 A_DASH_1            CHAR(1),
+               2 MEMBER_NAME         CHAR(10),
+               2 A_DASH_2            CHAR(1),
+               2 GROUP_NAME          CHAR(10),
+               2 A_DASH_3            CHAR(1),
+               2 SUBGROUP_NAME       CHAR(10),
+               2 A_DASH_4            CHAR(1),
+               2 TYPE_NAME           CHAR(10),
+               2 A_DASH_5            CHAR(1),
+               2 VERSION             CHAR(12),
+               2 DESC                CHAR(75);
+     DECLARE 1 ALIAS     BASED(PTR),
+                 3 ALIAS_TXT         CHAR(14),
+                 3 ALIAS_MEMBER      CHAR(10),
+                 3 FILLER1           CHAR(1),
+                 3 ALIAS_GROUP       CHAR(10),
+                 3 FILLER2           CHAR(1),
+                 3 ALIAS_SUBGROUP    CHAR(10),
+                 3 FILLER3           CHAR(1),
+                 3 ALIAS_TYPE        CHAR(10),
+                 3 FILLER4           CHAR(1),
+                 3 ALIAS_VERSION     CHAR(12),
+                 3 FILLER5           CHAR(5);
+     DECLARE 1 ALIAS_TAB   BASED(PTR),
+                 3 ALIAS_DESC        CHAR(6),
+                 3 ALIAS_ITEMS(5),
+                   4 ALIAS_DASH      CHAR(1),
+                   4 ALIAS_NAME      CHAR(12),
+                 3 FILLER1           CHAR(5);
+     DECLARE 1 NOTE_LINE   BASED(LINE_PTR),
+                 3 C_C               CHAR(1),
+                 3 NOTE_SEQ          CHAR(8),
+                 3 NOTE_FLAG         CHAR(5),
+                 3 NOTE_TEXT         CHAR(73);
+1/********************************************************************
+ *                                                                   *
+ *   INITILIALIZE PROGRAM AND ANALYZE THE PARM                       *
+ *                                                                   *
+ ********************************************************************/
+     PTR=ADDR(DESC);
+     LINE_PTR=ADDR(LINE_IN);
+     SORT_REC_PTR=ADDR(SORT_REC);
+     TODAYS_DATE = FORMAT_DATE(DATE,'MDY');
+
+     PUT PAGE EDIT('ARCHDIR V1.0.0',TODAYS_DATE)
+                  (A,COL(50),A,SKIP(2),A,X(4),A)
+                  ('PAGE ',PAGE_NUM) (COL(110),A,F(5));
+
+     PUT SKIP(2) EDIT('OPTIONS PASSED ', CMD_OPT)
+                  (A,COL(50),A,SKIP(2),A,X(4),A);
+
+     IF LENGTH(CMD_OPT) < 5  THEN
+     DO;
+         OPTS = 'GSMTV';
+         ITEM_OPT = 'ITEM=(*,*,*,*)';
+         PUT SKIP LIST('NO/INVALID PARM PASSED - DEFAULTING TO '
+                       || OPTS || 'AND LIST=(*,*,*,*)');
+     END;
+     ELSE
+     DO;
+         IF LENGTH(CMD_OPT) = 5  THEN
+         DO;
+            OPTS = CMD_OPT;
+            ITEM_OPT = 'ITEM=(*,*,*,*)';
+         END;
+         ELSE  /* LENGTH > 5 */
+         DO;
+            IF SUBSTR(CMD_OPT,6,1) = ',' THEN ;
+            ELSE
+            DO;
+               PUT SKIP LIST('INVALID PARM SYNTAX');
+               STOP;
+            END;
+            OPTS = CMD_OPT;
+            ITEM_OPT= SUBSTR(CMD_OPT,7);
+         END;
+     END;
+1/********************************************************************
+ *                                                                   *
+ *   INITILIALIZE COLUMN TITLES                                      *
+ *                                                                   *
+ ********************************************************************/
+
+     DO COL_INDEX = 1 TO 5;
+        COL_ID = SUBSTR(OPTS,COL_INDEX,1);
+        SELECT(COL_ID);
+            WHEN('M')
+               COLUMN_HEADINGS(COL_INDEX) = 'MEMBER    ';
+            WHEN('G')
+               COLUMN_HEADINGS(COL_INDEX) = 'GROUP     ';
+            WHEN('S')
+               COLUMN_HEADINGS(COL_INDEX) = 'SUBGROUP  ';
+            WHEN('T')
+               COLUMN_HEADINGS(COL_INDEX) = 'TYPE      ';
+            WHEN('V')
+               COLUMN_HEADINGS(COL_INDEX) = 'VERSION   ';
+            OTHERWISE
+               COLUMN_HEADINGS(COL_INDEX) = (10)'?';
+        ENDSELECT;
+     END;
+1/********************************************************************
+ *                                                                   *
+ *   SETUP AND RUN ARCHIVER                                          *
+ *                                                                   *
+ ********************************************************************/
+     DECLARE READ_ARCHIVER      FIXED BINARY  INIT(0);
+     DECLARE
+      1  WS_PGM_BLK   UNALIGNED,
+          5  WS_PGM_NAME        CHAR(8)       INIT('ARCHIVER'),
+          5  WS_PGM_ADDR        FIXED BIN(31) INIT(0),
+          5  WS_CALL_MODE       CHAR(1)       INIT('K'),
+          5  FILLER             CHAR(3)       INIT((3)' ');
+     DECLARE
+      1   WS_EXEC_PARM  STATIC,
+          5  WS_PARM_LEN        FIXED BIN(15) INIT(29),
+          5  WS_PARM            CHAR(29)
+             INIT('SYSIN=ARCHIN,SYSPRINT=ARCHRPT');
+     OPEN FILE(ARCHIN);
+     PUT FILE(ARCHIN) EDIT (' SET VSAM1DD=ARCHIVE')
+                           (A)
+                      EDIT (' LIST ',ITEM_OPT)
+                           (SKIP,A,A);
+     CLOSE FILE(ARCHIN);
+     CALL DYNALDA(WS_PGM_NAME,WS_EXEC_PARM);
+
+ /********************************************************************
+ *                                                                   *
+ *   PROCESS THE OUTPUT OF ARCHIVER                                  *
+ *                                                                   *
+ ********************************************************************/
+
+     OPEN FILE(ARCHRPT) INPUT;
+     ON ENDFILE(ARCHRPT)
+        EOF_SORT_IN=TRUE;
+
+     OPEN FILE(SYSOUT) OUTPUT;
+
+     DO WHILE(READ_ARCHIVER<8);
+        READ FILE(ARCHRPT) INTO(LINE_IN);
+        CC=' ';
+        WRITE FILE(SYSOUT) FROM(LINE_IN);
+        READ_ARCHIVER=READ_ARCHIVER+1;
+     END;
+
+     ON ENDPAGE(SYSPRINT)
+     BEGIN;
+         IF PAGE_NUM > 1 THEN
+         DO;
+            PUT PAGE EDIT('ARCHRPT V1.0.0',TODAYS_DATE)
+                  (A,COL(50),A,SKIP(2),A,X(4),A)
+                  ('PAGE ',PAGE_NUM) (COL(110),A,F(5));
+         END;
+         PUT SKIP(2) EDIT(COLUMN_HEADINGS(*))
+                      (A(10),X(2))
+                      ('DCB')
+                      (X(33),A);
+         PUT SKIP EDIT((10)'-',(10)'-',(10)'-',(10)'-',(10)'-')
+                      (A(10),X(2))
+                      ((68)'-') (X(4),A);
+         IF PAGE_NUM > 1 THEN
+             PUT SKIP;
+         PAGE_NUM = PAGE_NUM + 1;
+     END;
+     SIGNAL ENDPAGE(SYSPRINT);
+
+     CALL IHESRTD(SORT_STMT,RECORD_STMT,100000,SORT_RC,
+                  SORT_INPUT, SORT_OUTPUT);
+
+     IF SORT_RC > 0 THEN
+     DO;
+         PUT SKIP LIST('SORT_RC',SORT_RC);
+         PUT SKIP LIST(RECS_IN,RECS_OUT);
+     END;
+
+     PUT SKIP(2) EDIT('*** END OF REPORT ***') (A);
+
+     CC=' ';
+     WRITE FILE(SYSOUT) FROM(LINE_IN);
+     READ FILE(ARCHRPT) INTO(LINE_IN);
+     CC=' ';
+     WRITE FILE(SYSOUT) FROM(LINE_IN);
+
+     CLOSE FILE(ARCHRPT),FILE(SYSOUT);
+
+ SORT_INPUT:PROC RETURNS(CHAR(134));
+ /********************************************************************
+ *                                                                   *
+ *   THIS PROCESS TAKES EACH LINE OF THE ARCHIVER REPORT AND         *
+ *   IGNORES LINES OTHER THAN ITEM REPORT LINES AND NOTE LINES.      *
+ *                                                                   *
+ *   SINCE PL/I SORT INTERFACE ONLY ONE RECORD TO BE RELEASED TO     *
+ *   SORT WHEN THE PROC IS EXITED, LOGIC TO SUPPORT ALIAS ITEMS      *
+ *   REQUIRES THE ITEM LINE BE PROCESSED A SECOND TIME IN ORDER      *
+ *   TO RELEASE THE ALIAS RECORD TO SORT.                            *
+ *                                                                   *
+ *   NOTE RECORDS FOLLOW THE ITEM SO THEY CAN BE RELEASED USING      *
+ *   DATA FROM THE PREVIOUS ITEM RECORD.                             *
+ *                                                                   *
+ *                                                                   *
+ ********************************************************************/
+
+ READ_IT:
+     IF RE_READ_LINE_IN THEN
+     DO;
+        RE_READ_LINE_IN=FALSE;
+        DO COL_INDEX = 1 TO 5;
+           COL_ID = SUBSTR(OPTS,COL_INDEX,1);
+           SELECT(COL_ID);
+               WHEN('M')
+                  SR_COL_DATA(COL_INDEX) = ALIAS_MEMBER;
+               WHEN('G')
+                  SR_COL_DATA(COL_INDEX) = ALIAS_GROUP;
+               WHEN('S')
+                  SR_COL_DATA(COL_INDEX) = ALIAS_SUBGROUP;
+               WHEN('T')
+                  SR_COL_DATA(COL_INDEX) = ALIAS_TYPE;
+               WHEN('V')
+                  SR_COL_DATA(COL_INDEX) = SUBSTR(ALIAS_VERSION,3);
+               OTHERWISE
+                  SR_COL_DATA(COL_INDEX) = (10)'?';
+           ENDSELECT;
+        END;
+        DESC=' ALIAS';
+        DO COL_INDEX = 1 TO 5;
+           ALIAS_DASH(COL_INDEX)='-';
+           COL_ID = SUBSTR(OPTS,COL_INDEX,1);
+           SELECT(COL_ID);
+               WHEN('M')
+                  ALIAS_NAME (COL_INDEX) = MEMBER_NAME;
+               WHEN('G')
+                  ALIAS_NAME (COL_INDEX) = GROUP_NAME;
+               WHEN('S')
+                  ALIAS_NAME (COL_INDEX) = SUBGROUP_NAME;
+               WHEN('T')
+                  ALIAS_NAME (COL_INDEX) = TYPE_NAME;
+               WHEN('V')
+                  ALIAS_NAME (COL_INDEX) = SUBSTR(VERSION,3);
+               OTHERWISE
+                  ALIAS_NAME (COL_INDEX) = (10)'?';
+           ENDSELECT;
+        END;
+        SR_DESC=DESC;
+        SR_REC_TYPE='2';
+        SR_NOTE_SEQ=(8)' ';
+     END;
+     ELSE
+     DO;
+        READ FILE(ARCHRPT) INTO(LINE_IN);
+        IF EOF_SORT_IN | CC = '0' THEN
+        DO;
+           CALL IHESARC(8);
+           RETURN;
+        END;
+        RECS_IN=RECS_IN+1;
+        IF CC = ' ' & NOTE_FLAG = ' --> ' THEN
+        DO;
+            SR_REC_TYPE = '3';
+            SR_NOTE_SEQ = NOTE_SEQ;
+            SR_DESC = NOTE_TEXT;
+            GO TO SORT_IT;
+        END;
+        IF CC = ' ' & A_DASH_1 = '-' THEN ;
+        ELSE GO TO READ_IT;
+        DO COL_INDEX = 1 TO 5;
+           COL_ID = SUBSTR(OPTS,COL_INDEX,1);
+           SELECT(COL_ID);
+               WHEN('M')
+                  SR_COL_DATA(COL_INDEX) = MEMBER_NAME;
+               WHEN('G')
+                  SR_COL_DATA(COL_INDEX) = GROUP_NAME;
+               WHEN('S')
+                  SR_COL_DATA(COL_INDEX) = SUBGROUP_NAME;
+               WHEN('T')
+                  SR_COL_DATA(COL_INDEX) = TYPE_NAME;
+               WHEN('V')
+                  SR_COL_DATA(COL_INDEX) = SUBSTR(VERSION,3);
+               OTHERWISE
+                  SR_COL_DATA(COL_INDEX) = (10)'?';
+           ENDSELECT;
+        END;
+        IF SUBSTR(DESC,1,12) = '   ALIAS FOR' THEN
+        DO;
+           RE_READ_LINE_IN=TRUE;
+           NEW_ALIAS = '   ALIAS FOR ';
+           DO COL_INDEX = 1 TO 5;
+              NEW_ALIAS = NEW_ALIAS || '-';
+              COL_ID = SUBSTR(OPTS,COL_INDEX,1);
+              SELECT(COL_ID);
+                  WHEN('M')
+                     NEW_ALIAS = NEW_ALIAS || ALIAS_MEMBER;
+                  WHEN('G')
+                     NEW_ALIAS = NEW_ALIAS || ALIAS_GROUP;
+                  WHEN('S')
+                     NEW_ALIAS = NEW_ALIAS || ALIAS_SUBGROUP;
+                  WHEN('T')
+                     NEW_ALIAS = NEW_ALIAS || ALIAS_TYPE;
+                  WHEN('V')
+                     NEW_ALIAS = NEW_ALIAS || SUBSTR(VERSION,3);
+                  OTHERWISE
+                     NEW_ALIAS = NEW_ALIAS || (10)'?';
+              ENDSELECT;
+           END;
+           SR_DESC=NEW_ALIAS;
+        END;
+        ELSE
+           SR_DESC=DESC;
+        SR_REC_TYPE='1';
+     END;
+     SR_NOTE_SEQ = (8)' ';
+ SORT_IT:
+     CALL IHESARC(12);
+     RETURN(SORT_REC);
+
+ END SORT_INPUT;
+
+ SORT_OUTPUT:PROC(SORT_REC);
+     DECLARE (SORT_REC,SRP)         CHAR(134);
+
+     SORT_REC_PTR=ADDR(SORT_REC);
+     SRP=SORT_REC;
+
+     IF SR_REC_TYPE = '1' THEN
+        PUT SKIP EDIT(SR_COL_DATA,SR_DESC) (4(A(10),X(2)),A(12),A(70));
+     ELSE
+        PUT SKIP EDIT(SR_DESC) (COL(62),A(70));
+     RECS_OUT=RECS_OUT+1;
+     CALL IHESARC(4);
+     RETURN;
+ END SORT_OUTPUT;
+
+ END ARCHDIR;

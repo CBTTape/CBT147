@@ -1,0 +1,66 @@
+         MACRO
+&NAME    VSAMIOFB &PREFIX=$,&DSECT=YES
+***********************************************************************
+*                                                                     *
+* VV   VV   SSSSS      A     M     M  IIII   OOOOO   FFFFFFF  BBBBBB  *
+* VV   VV  SS   SS    AAA    MM   MM   II   OO   OO  FF       BB   BB *
+* VV   VV  SS        AA AA   MMM MMM   II   OO   OO  FF       BB   BB *
+* VV   VV   SSSSS   AA   AA  MMMMMMM   II   OO   OO  FFFFF    BBBBBB  *
+* VV   VV       SS  AA   AA  MM M MM   II   OO   OO  FF       BB   BB *
+*  VV VV   SS   SS  AAAAAAA  MM   MM   II   OO   OO  FF       BB   BB *
+*   VVV    SS   SS  AA   AA  MM   MM   II   OO   OO  FF       BB   BB *
+*    V      SSSSS   AA   AA  MM   MM  IIII   OOOOO   FF       BBBBBB  *
+*                                                                     *
+***********************************************************************
+* THESE PARAMETERS ARE USED TO INTERFACE WITH THE VSAM DATASET ACCESS *
+* ROUTINE, AND ARE USED TO COMMUNICATE CHARACTERISTICS FOR A SINGLE   *
+* VSAM DATASET.                                                       *
+*                                                                     *
+* WITH THE 2 EXCEPTIONS FOR RECORD LENGTH (TO ACCOMODATE VARIABLE     *
+* LENGTH RECORDS) AND RELATIVE RECORD (TO ACCOMODATE RELATIVE RECORD  *
+* DATASETS), THESE DATA NAMES MUST BE POPULATED PRIOR TO CALLING THE  *
+* ROUTINE TO OPEN THE DATASET AND MUST NOT THEN BE CHANGED UNTIL THE  *
+* DATASET HAS BEEN CLOSED.                                            *
+***********************************************************************
+*
+         AIF  (T'&DSECT EQ 'O').NODSECT
+         AIF  ('&DSECT' EQ 'NO').NODSECT
+         AIF  ('&DSECT' EQ 'YES').DS
+         MNOTE 12,'**** VSAMIOFB - DSECT MUST BE YES OR NO ****'
+         MEXIT
+.DS      ANOP
+*---------------------------------------------------------------------*
+* THE DUMMY SECTION BELOW MAPS THE DATASET CONTROL PARAMETER BLOCK    *
+* PASSED FROM THE CALLING PROGRAM.                                    *
+&NAME    DSECT
+         AGO  .BLK
+.NODSECT ANOP
+&NAME    DS   0H
+.BLK     ANOP
+*---------------------------------------------------------------------*
+* THE PARAMETERS BELOW MUST BE SET BEFORE THE DATASET IS OPENED AND   *
+* (GENERALLY) SHOULD NOT BE MODIFIED WHILE THE DATASET IS OPEN.       *
+*---------------------------------------------------------------------*
+&PREFIX.DDNAME DS CL08                DD NAME
+&PREFIX.ORG DS    CL04                ORGANIZATION (KS/ES/RR)
+&PREFIX.ACCESS DS CL10                ACCESS MODE (DIR/SEQ/DYNAM)
+&PREFIX.MODE DS   CL06                MODE (INPUT/OUTPUT/UPDATE)
+&PREFIX.RECLEN DS H                   RECORD LENGTH
+&PREFIX.RKP DS    H                   KEY OFFSET
+&PREFIX.KEYLEN DS H                   KEY LENGTH
+         ORG  *-4
+&PREFIX.RRN DS    XL4                 RELATIVE RECORD NUMBER
+         AIF  (T'&DSECT EQ 'O').NODS2
+         AIF  ('&DSECT' NE 'YES').NODS2
+&PREFIX.OPENSW DS CL1                 OPEN FLAG (O=OPEN/C=CLOSED)
+         AGO  .DSDONE
+.NODS2   ANOP
+&PREFIX.OPENSW DC CL1'C'              OPEN FLAG (O=OPEN/C=CLOSED)
+.DSDONE  ANOP
+&PREFIX.RESAREA DS CL161              DEFINE CALLERS RESERVE AREA
+&NAME.L  EQU   (*-&NAME)    LENGTH OF VSAMIOFB
+*
+**********************************************************************
+*                       END OF VSAMIOFB COPY BOOK                    *
+**********************************************************************
+         MEND

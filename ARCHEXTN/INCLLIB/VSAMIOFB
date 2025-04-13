@@ -1,0 +1,38 @@
+ /**********************************************************************
+
+    VV   VV   SSSSS      A     M     M  IIII   OOOOO   FFFFFFF  BBBBBB
+    VV   VV  SS   SS    AAA    MM   MM   II   OO   OO  FF       BB   BB
+    VV   VV  SS        AA AA   MMM MMM   II   OO   OO  FF       BB   BB
+    VV   VV   SSSSS   AA   AA  MMMMMMM   II   OO   OO  FFFFF    BBBBBB
+    VV   VV       SS  AA   AA  MM M MM   II   OO   OO  FF       BB   BB
+     VV VV   SS   SS  AAAAAAA  MM   MM   II   OO   OO  FF       BB   BB
+      VVV    SS   SS  AA   AA  MM   MM   II   OO   OO  FF       BB   BB
+       V      SSSSS   AA   AA  MM   MM  IIII   OOOOO   FF       BBBBBB
+
+  **********************************************************************
+    THESE PARAMETERS ARE USED TO INTERFACE WITH THE VSAM DATASET ACCESS
+    ROUTINE, AND ARE USED TO COMMUNICATE CHARACTERISTICS FOR A SINGLE
+    VSAM DATASET.
+
+    WITH THE 2 EXCEPTIONS FOR RECORD LENGTH (TO ACCOMODATE VARIABLE
+    LENGTH RECORDS) AND RELATIVE RECORD (TO ACCOMODATE RELATIVE RECORD
+    DATASETS), THESE DATA NAMES MUST BE POPULATED PRIOR TO CALLING THE
+    ROUTINE TO OPEN THE DATASET AND MUST NOT THEN BE CHANGED UNTIL THE
+    DATASET HAS BEEN CLOSED.
+  *********************************************************************/
+
+       DECLARE
+          1 VSIO_FILE_BLOCK            STATIC,
+             2 VSFB_DDNAME             CHAR(8)   INIT(' '),
+             2 VSFB_ORGANIZATION       CHAR(4)   INIT(' '),
+             2 VSFB_ACCESS             CHAR(10)  INIT(' '),
+             2 VSFB_MODE               CHAR(6)   INIT(' '),
+             2 (VSFB_RECORD_LENGTH,
+                VSFB_KEY_POSITION,
+                VSFB_KEY_LENGTH)       FIXED BINARY(15,0) INIT(0),
+             2 VSFB_FILE_STATUS        CHAR(1)   INIT('C'),
+             2 VSFB_RESERVED           CHAR(161);
+
+ /**********************************************************************
+                          END OF VSAMIOFB COPY BOOK
+  *********************************************************************/

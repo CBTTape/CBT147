@@ -1,0 +1,13 @@
+//ARCHRST PROC ARCHIVE=,
+//             MEMBER=,
+//             GROUP=,
+//             SUBGRP=,
+//             TYPE=,
+//             VERSION='-',
+//             COMMIT=TEST,
+//             SOUT='*'
+//ARCHRST EXEC PGM=ARCHRST,REGION=4096K,
+//        PARM='&MEMBER,&GROUP,&SUBGRP,&TYPE,&VERSION,&COMMIT'
+//SYSPRINT DD SYSOUT=&SOUT
+//SYSOUT   DD SYSOUT=&SOUT
+//ARCHIVE  DD DSN=&ARCHIVE,DISP=SHR

@@ -1,0 +1,73 @@
+ /**********************************************************************
+
+         VV   VV    SSSSS       A      M     M    IIII      OOOOO
+         VV   VV   SS   SS     AAA     MM   MM     II      OO   OO
+         VV   VV   SS         AA AA    MMM MMM     II      OO   OO
+         VV   VV    SSSSS    AA   AA   MMMMMMM     II      OO   OO
+         VV   VV        SS   AA   AA   MM M MM     II      OO   OO
+          VV VV    SS   SS   AAAAAAA   MM   MM     II      OO   OO
+           VVV     SS   SS   AA   AA   MM   MM     II      OO   OO
+            V       SSSSS    AA   AA   MM   MM    IIII      OOOOO
+
+  **********************************************************************
+   THESE PARAMETERS ARE USED TO INTERFACE WITH THE VSAM DATASET ACCESS
+   ROUTINE.
+
+   THE VSIO_PARAMETER_VALUES SUPPLY THE VALUES USED TO MOVE INTO
+   PARAMETER ENTRIES TO TAILOR THE ROUTINE TO A SPECIFIC DATASET AND
+   TO PROVIDE COMMANDS TO DRIVE THE ROUTINE.
+  *********************************************************************/
+
+          DECLARE
+             1 VSIO_PARAMETER_VALUES   STATIC,
+                2 VSIO_OPEN            CHAR(8)   INIT('OPEN    '),
+                2 VSIO_CLOSE           CHAR(8)   INIT('CLOSE   '),
+                2 VSIO_READ            CHAR(8)   INIT('READ    '),
+                2 VSIO_WRITE           CHAR(8)   INIT('WRITE   '),
+                2 VSIO_REWRITE         CHAR(8)   INIT('REWRITE '),
+                2 VSIO_DELETE          CHAR(8)   INIT('DELETE  '),
+                2 VSIO_START_EQUAL     CHAR(8)   INIT('STARTEQ '),
+                2 VSIO_START_NOTLESS   CHAR(8)   INIT('STARTGE '),
+                2 VSIO_KSDS            CHAR(4)   INIT('KSDS'),
+                2 VSIO_ESDS            CHAR(4)   INIT('ESDS'),
+                2 VSIO_RRDS            CHAR(4)   INIT('RRDS'),
+                2 VSIO_SEQUENTIAL      CHAR(10)  INIT('SEQUENTIAL'),
+                2 VSIO_DIRECT          CHAR(10)  INIT('DIRECT    '),
+                2 VSIO_DYNAMIC         CHAR(10)  INIT('DYNAMIC   '),
+                2 VSIO_INPUT           CHAR(6)   INIT('INPUT '),
+                2 VSIO_OUTPUT          CHAR(6)   INIT('OUTPUT'),
+                2 VSIO_INPUT_OUTPUT    CHAR(6)   INIT('UPDATE'),
+                2 (VSIO_RC_SUCCESS               INIT(0),
+                   VSIO_RC_LOGIC_ERROR           INIT(8),
+                   VSIO_RC_END_OF_FILE           INIT(9999),
+                   VSIO_RC_UNKNOWN_COMMAND       INIT(20),
+                   VSIO_RC_DATASET_ALREADY_OPEN  INIT(21),
+                   VSIO_RC_DATASET_NOT_OPEN      INIT(22),
+                   VSIO_RC_ORGANIZATION_UNKNOWN  INIT(23),
+                   VSIO_RC_ACCESS_UNKNOWN        INIT(24),
+                   VSIO_RC_ORG_ACCESS_MISMATCH   INIT(25),
+                   VSIO_RC_MODE_UNKNOWN          INIT(26),
+                   VSIO_RC_MODE_UNSUPPORTED      INIT(27),
+                   VSIO_RC_DDNAME_BLANK          INIT(28))
+                                       FIXED BINARY(15,0),
+                2 (VSIO_FB_DUPLICATE_RECORD      INIT(8),
+                   VSIO_FB_KEY_SEQUENCE          INIT(12),
+                   VSIO_FB_RECORD_NOT_FOUND      INIT(16),
+                   VSIO_FB_NO_MORE_SPACE         INIT(28),
+                   VSIO_FB_READ_WITHOUT_START    INIT(88))
+                                       FIXED BINARY(15,0),
+ /**********************************************************************
+   THE VSIO_PARAMETER_BLOCK IS THE COMMUNICATION INTERFACE TO THE
+   THE ROUTINE.
+  *********************************************************************/
+
+             1 VSIO_PARAMETER_BLOCK    STATIC,
+                2 VSIO_COMMAND         CHAR(8)   INIT(' '),
+                2 (VSIO_RETURN_CODE,
+                   VSIO_VSAM_RC,
+                   VSIO_VSAM_FUNCTION,
+                   VSIO_VSAM_FEEDBACK) FIXED BINARY(15,0) INIT(0);
+
+ /**********************************************************************
+                           END OF VSAMIO COPY BOOK
+  *********************************************************************/

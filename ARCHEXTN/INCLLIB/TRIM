@@ -1,0 +1,36 @@
+1/**********************************************************************
+ *                                                                     *
+ *    THESE FUNCTION TRUNCATES LEADING AND TRAILING SPECS FROM THE     *
+ *    ARGUMENT CHAR_IN.                                                *
+ *                                                                     *
+ **********************************************************************/
+    DECLARE TRIM ENTRY(CHAR(*)) RETURNS(CHAR(44) VARYING);
+ TRIM:PROC(CHAR_IN) RETURNS(CHAR(44) VARYING);
+    DECLARE CHAR_IN  CHAR(*);
+    DECLARE I  FIXED BINARY ALIGNED;
+    DECLARE TRIMMED CHAR(44) VARYING;
+
+    IF LENGTH(CHAR_IN) > 44 THEN
+         RETURN('?');
+
+    I=LENGTH(CHAR_IN);
+    DO WHILE (SUBSTR(CHAR_IN,I,1)=' ' & I > 1);
+       I=I-1;
+    END;
+    IF I>0 THEN
+       TRIMMED=SUBSTR(CHAR_IN,1,I);
+    ELSE
+       TRIMMED='?';
+    IF SUBSTR(TRIMMED,1,1)=' ' THEN
+    DO;
+       I=1;
+       DO WHILE (SUBSTR(TRIMMED,I,1)=' ' & I < LENGTH(TRIMMED));
+          I=I+1;
+       END;
+       IF I<=LENGTH(TRIMMED) THEN
+          TRIMMED=SUBSTR(TRIMMED,I);
+       ELSE
+          TRIMMED='?';
+    END;
+    RETURN(TRIMMED);
+ END TRIM;

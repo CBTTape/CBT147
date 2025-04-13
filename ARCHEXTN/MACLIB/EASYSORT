@@ -1,0 +1,114 @@
+         MACRO
+&REF     EASYSORT &FUNC,&WORKA,&EODAD=,&SET=(R1),                      X
+               &TYPE=F,&LENGTH=80,&FIELDS=(1,80,CH,A)
+.**********************************************************************
+.*                                                                    *
+.*   USAGE:                                                           *
+.*                                                                    *
+.*       SORT  OPEN,TYPE=F,LENGTH=64,FIELDS=(1,22,CH,A)               *
+.*       SORT  PUT,(1)                                                *
+.*       SORT  GET,SET=(R3),EODAD=ENDSORT                             *
+.*                                                                    *
+.**********************************************************************
+         GBLB  &EASYSRT
+         LCLC  &LABEL,&LQ
+&LABEL   SETC  'IHB&SYSNDX'
+         AIF   ('&FUNC' EQ 'OPEN').OPEN
+         AIF   ('&FUNC' EQ 'PUT').PUT
+         AIF   ('&FUNC' EQ 'GET').GET
+         MNOTE 8,'INVALID FUNCTION REQUESTED &FUNC'
+&REF     DS    0H
+         MEXIT
+.OPEN    ANOP  ,  ====== OPEN ========
+&REF     L     R15,=A(SORT$OPN)        .
+         LA    R1,=A(&LABEL.P+X'80000000') PARM LIST ADDRESS
+         BALR  R14,R15                 OPEN SORT
+SORT$XXX CSECT
+.**********************************************************************
+         AIF   (&EASYSRT).NOOPN        JUMP IF NOT FIRST OPEN
+&EASYSRT SETB  1
+SORT$OPN STM   R14,R12,12(R13)         SAVE REGISTERS
+         USING SORT$OPN,R15
+         ST    R13,SORT$SAV+4          BACKWARD CHAIN
+         LA    R13,SORT$SAV            SORT SAVE AREA
+         MVI   0(R13),C'0'             PHASE 0 ENTERED
+*        LINK  SF=(E,SORT$LNK)         LINK EP=SORT,SF=L
+         LINK  SF=(E,SORT$LNK)         LINK EP=SORT,SF=L
+         L     R13,4(,R13)             RELOAD PROGRAM'S SAVE AREA ADDR.
+         LM    R14,R12,12(R13)         RESTORE REGISTERS (GET)
+         SLR   R1,R1                   INVALIDATE RECORD POINTER
+         BR    R14                     GOBACK TO PROGRAM (GET)
+SORT$E15 STM   R14,R12,12(R13)         SAVE REGISTERS FROM SORT
+         USING SORT$E15,R15
+.*       ST    R13,SORT$SAV+8          ESTABLISH CHAIN FOR PUT
+         L     R13,SORT$SAV+4          PROGRAM'S SAVE AREA
+         MVI   SORT$SAV,C'1'           PHASE 1 STARTED
+         LM    R14,R12,12(R13)         RESTORE PROGRAM'S REGISTERS
+         BR    R14                     GOBACK TO PROGRAM (PUT)
+SORT$PUT STM   R14,R12,12(R13)         SAVE PROGRAM'S REGISTERS
+         USING SORT$OPN,R15
+         L     R13,SORT$SAV+8          SAVE AREA FOR E15
+         LM    R14,R0,12(R13)          RESTORE SORT R14-R0
+         LA    R15,0012(0)             INSERT RECORD REQUEST
+         LM    R2,R12,28(R13)          RESTORE SORT R2-R12
+         BR    R14                     GOBACK TO SORT (E15)
+SORT$E35 STM   R14,R12,12(R13)         SAVE REGISTERS FROM SORT
+         USING SORT$E35,R15
+         ICM   R1,B'1111',0(R1)        ADDR OF SORTED RECORD
+         BZ    SORT$E36                NO MORE RECORDS, TERMINATE E35
+.*       ST    R13,SORT$SAV+8          ESTABLISH CHAIN FOR GET
+         L     R13,SORT$SAV+4          PROGRAM'S SAVE AREA
+         LM    R14,R0,12(R13)          RESTORE PROGRAM'S R14-R0
+         LM    R2,R12,28(R13)          RESTORE PROGRAM'S R2-R12
+         BR    R14                     GOBACK TO PROGRAM, PASS R1
+SORT$E36 LA    R15,0008(0)             "QUIT" RETURN CODE
+         BR    R14                     GOBACK TO SORT, TERMINATE E35
+SORT$GET STM   R14,R12,12(R13)         SAVE PROGRAM'S REGISTERS
+         USING SORT$OPN,R15
+         L     R13,SORT$SAV+8          SAVE AREA FOR E15/E35
+         CLI   SORT$SAV,C'3'           CHECK PHASE 3 ENTERED
+         BE    &LABEL.3                JUMP IF E35 STARTED ALREADY
+         MVI   SORT$SAV,C'3'           SHOW PHASE 3 ENTERED
+         LM    R14,R12,12(R13)         RESTORE SORT REGISTERS
+         LA    R15,0008(0)             END OF E15 REQUEST
+         BR    R14                     GOBACK TO SORT (E15)
+&LABEL.3 LM    R14,R12,12(R13)         RESTORE REGISTERS
+         LA    R15,0004(0)             DELETE RECORD
+         BR    R14                     GOBACK TO SORT (E35)
+         DROP  R15
+SORT$LNK LINK  EP=SORT,SF=L            PARAMETER LIST FOR LINK SVC
+SORT$SAV DS    18F                     SAVE AREA FOR SORT
+.NOOPN   CNOP  2,4
+&LQ      SETC  'L'''
+&LABEL.P DC    Y(&LABEL.S-(*+2))       LENGTH OF PARM LIST
+         DC    A(&LABEL.S,&LABEL.S+&LQ&LABEL.S-1)
+         DC    A(&LABEL.R,&LABEL.R+&LQ&LABEL.R-1)
+         DC    A(SORT$E15,SORT$E35)
+&LABEL.S DC    C' SORT FIELDS=&FIELDS '
+&LABEL.R DC    C' RECORD TYPE=&TYPE,LENGTH=&LENGTH ',0H'0'
+&SYSECT  CSECT
+         MEXIT
+.**********************************************************************
+.*       PUT
+.**********************************************************************
+.PUT     AIF   ('&WORKA'(1,1) EQ '(').PUTREG
+&REF     LA    R1,&WORKA               GET RECORD ADDRESS
+         AGO   .PUTCOMM
+.PUTREG  AIF   ('&WORKA' EQ '(1)' OR '&WORKA' EQ '(R1)').PUTREG1
+&REF     LR    R1,&WORKA(1)            GET RECORD ADDRESS
+         AGO   .PUTCOMM
+.PUTREG1 ANOP
+&REF     L     R15,=A(SORT$OPN)        POINT TO SORT CSECT
+         AGO   .PUTBALR
+.PUTCOMM L     R15,=A(SORT$OPN)        POINT TO SORT CSECT
+.PUTBALR BAL   R14,SORT$PUT-SORT$OPN(,R15) CALL PUT ROUTINE
+         MEXIT
+.**********************************************************************
+.*       GET
+.**********************************************************************
+.GET     ANOP
+&REF     L     R15,=A(SORT$OPN)        POINT TO SORT CSECT
+         BAL   R14,SORT$GET-SORT$OPN(,R15) CALL GET ROUTINE
+         LTR   &SET(1),R1              CHECK RECORD ADDRESS
+         BZ    &EODAD                  END OF DATA
+.MEND    MEND

@@ -1,0 +1,205 @@
+ /* ARCHUTIL - V1.0.0 - COPIES ARCHIVE CLUSTERS TO/FROM QSAM FILES */
+ /********************************************************************
+ *                                                                   *
+ *   ARCHUTIL - COPY VSAM ARCHIVE CLUSERS TO/FROM QSAM FILES.        *
+ *                                                                   *
+ *   CONTROLED BY A EXEC PARM, AN ARCHIVE CLUSTER IS COPIED TO OR    *
+ *   BUILT FROM A QSAM FILE.  RECORDS FROM AN ARCHIVE CAN BE UP TO   *
+ *   32000 BYTES, LONGER THAN ANY DEVICE EXCEPT FOR TAPE TO HANDLE.  *
+ *   IDCAMS REPRO TO AND FROM TAPE WILL ACCOMPLISH THE SAME THING.   *
+ *   THE GOAL OF ARCHUTIL IS TO CONVERT THE ARCHIVE TO RECORDS THAT  *
+ *   ANY DEVICE CAN BE USED TO BACKUP OR RESTORE ARCHIVER CLUSTERS   *
+ *   TO ANY DEVICE OR TO PREPARE FOR TRANSMISSION.                   *
+ *                                                                   *
+ *   ARCHUTIL IS DEPENDENT ON THE PL/1 IMPLEMENTATION OF STREAM I/O  *
+ *   FILES.  STREAM I/O TREATS THE DATA AS A CONTINOUS DATA WITH NO  *
+ *   REGARDS TO RECORDS.  THAT ALLOWS RECORDS AS LONG AS 32000       *
+ *   BYTES TO BE WRITTEN OR READ FROM A FILE.  PL/1 HANDLES TO       *
+ *   LOGICAL "BLOCKING" OF THE DATA INTO RECORDS.                    *
+ *                                                                   *
+ *   EACH RECORD WRITTEN IS PRECEEDED BY 2 BYTES CONTAINING THE      *
+ *   LENGTH OF THE RECORD THAT FOLLOWS.  THE DATA IS WRITTEN TO      *
+ *   THE FILE, BREAKING IT UP INTO LOGICAL RECORDS.  A LENGTH OF     *
+ *   ZERO INDICATED END OF FILE.                                     *
+ *                                                                   *
+ *   VERSION     COMMENTS                                            *
+ *     1.0.0     INITIAL VERSION                                     *
+ *                                                                   *
+ *                                                                   *
+ ********************************************************************/
+ ARCHUTI:PROC(EXEC_PARM) OPTIONS(MAIN);
+     DECLARE EXEC_PARM      CHAR(100) VARYING;
+
+     DECLARE SEQFL STREAM FILE;
+     DECLARE REC_LEN    FIXED BINARY ALIGNED;
+     DECLARE HEADER     CHAR(2),
+             1 FILLER   BASED(A_PTR),
+             2 HEADER_LEN FIXED BIN;
+     DECLARE MORE_ARCH  BIT(1) ALIGNED;
+     DECLARE (TRUE INIT('1'B),FALSE INIT('0'B)) BIT(1) ALIGNED;
+     DECLARE ARCH_RECS_READ   FIXED DECIMAL(11,0) INIT(0);
+     DECLARE (SHORTEST_REC    INIT(32000),
+              LONGEST_REC     INIT(0))  FIXED BINARY(15) ALIGNED;
+  %INCLUDE FIX2STR;
+  %INCLUDE SELECT;
+1/********************************************************************
+ *                                                                   *
+ *   VSAMIOP ACCESS AREAS                                            *
+ *                                                                   *
+ ********************************************************************/
+
+ %INCLUDE VSAMIO;
+
+ %INCLUDE VSAMIOFB;
+
+ %INCLUDE VSAMIORC;
+
+ /********************************************************************
+ *                                                                   *
+ *    ARCHDIR - ARCHIVE DIRECTORY RECORD LAYOUT                      *
+ *                                                                   *
+ ********************************************************************/
+     DECLARE 1 ARCHIVE_RECORD               CHAR(32000);
+     DECLARE ARC_RECORD_PTR                 POINTER;
+
+     A_PTR=ADDR(HEADER);
+
+     ARC_RECORD_PTR = ADDR(ARCHIVE_RECORD);
+ /********************************************************************
+ *                                                                   *
+ *    VALIDATE PARM.  END OF INVALID                                 *
+ *                                                                   *
+ ********************************************************************/
+     IF LENGTH(EXEC_PARM) = 0 THEN
+     DO;
+        PUT SKIP(2) LIST('*** EXEC CARD PARM NOT SPECIFIED ***');
+        STOP;
+     END;
+     PUT SKIP(2) EDIT('*** EXEC CARD PARM=',EXEC_PARM)  (A,A);
+     IF LENGTH(EXEC_PARM) = 4 THEN
+     DO;
+        IF EXEC_PARM = 'LOAD' THEN
+           CALL PROCESS_ARCHIN;
+        ELSE
+        DO;
+           PUT SKIP LIST('*** INVALID PARM ***');
+           STOP;
+        END;
+     END;
+     ELSE
+        IF LENGTH(EXEC_PARM) = 6 THEN
+        DO;
+           IF EXEC_PARM = 'UNLOAD' THEN
+              CALL PROCESS_ARCHOUT;
+           ELSE
+           DO;
+              PUT SKIP LIST('*** INVALID PARM ***');
+              STOP;
+           END;
+        END;
+        ELSE
+        DO;
+           PUT SKIP LIST('*** INVALID PARM ***');
+           STOP;
+        END;
+ PROCESS_ARCHIN:PROC;
+     VSFB_DDNAME = 'ARCHIN';
+     VSFB_ORGANIZATION = VSIO_KSDS;
+     VSFB_ACCESS = VSIO_SEQUENTIAL;
+     VSFB_MODE = VSIO_INPUT;
+     VSFB_RECORD_LENGTH = 32000;
+     VSFB_KEY_POSITION = 0;
+     VSFB_KEY_LENGTH = 49;
+     VSIO_COMMAND = VSIO_OPEN;
+     CALL VSAM_IO;
+
+     MORE_ARCH = TRUE;;
+     DO WHILE(MORE_ARCH);
+        VSIO_COMMAND = VSIO_READ;
+        VSFB_RECORD_LENGTH = 32000;
+        CALL VSAM_IO;
+        IF VSIO_RETURN_CODE = VSIO_RC_END_OF_FILE THEN
+           MORE_ARCH = FALSE;
+        ELSE
+        DO;
+           ARCH_RECS_READ=ARCH_RECS_READ+1;
+           REC_LEN = VSFB_RECORD_LENGTH;
+           IF REC_LEN > LONGEST_REC THEN LONGEST_REC = REC_LEN;
+           IF REC_LEN < SHORTEST_REC THEN SHORTEST_REC = REC_LEN;
+           HEADER_LEN = REC_LEN;
+           PUT FILE(SEQFL) EDIT(HEADER) (A(2));
+           PUT FILE(SEQFL) EDIT(ARCHIVE_RECORD) (A(REC_LEN));
+        END;
+     END;
+     VSIO_COMMAND = VSIO_CLOSE;
+     CALL VSAM_IO;
+     HEADER_LEN = 0;
+     PUT FILE(SEQFL) EDIT(HEADER) (A(2));   /* MARK EOF */
+     CLOSE FILE(SEQFL);
+     PUT SKIP EDIT('ARCHIVE RECORDS READ = ',ARCH_RECS_READ) (A,F(10));
+     PUT SKIP EDIT('SHORTEST RECORD READ = ',SHORTEST_REC)   (A,F(10));
+     PUT SKIP EDIT('LONGEST RECORD READ  = ',LONGEST_REC)    (A,F(10));
+
+ END PROCESS_ARCHIN;
+
+ PROCESS_ARCHOUT:PROC;
+     ARCH_RECS_READ = 0;
+     VSFB_DDNAME = 'ARCHOUT';
+     VSFB_ORGANIZATION = VSIO_KSDS;
+     VSFB_ACCESS = VSIO_SEQUENTIAL;
+     VSFB_MODE = VSIO_OUTPUT;
+     VSFB_RECORD_LENGTH = 32000;
+     VSFB_KEY_POSITION = 0;
+     VSFB_KEY_LENGTH = 49;
+     VSIO_COMMAND = VSIO_OPEN;
+     CALL VSAM_IO;
+
+     MORE_ARCH = TRUE;;
+     OPEN FILE(SEQFL) INPUT;
+     ON ENDFILE(SEQFL)
+        MORE_ARCH = FALSE;
+
+     DO WHILE(MORE_ARCH);
+        GET FILE(SEQFL) EDIT(HEADER) (A(2));
+        IF HEADER_LEN = 0 THEN
+            SIGNAL ENDFILE(SEQFL);
+        GET FILE(SEQFL) EDIT(ARCHIVE_RECORD) (A(HEADER_LEN));
+        IF MORE_ARCH THEN
+        DO;
+           ARCH_RECS_READ=ARCH_RECS_READ+1;
+           VSIO_COMMAND = VSIO_WRITE;
+           VSFB_RECORD_LENGTH = HEADER_LEN;
+           REC_LEN = VSFB_RECORD_LENGTH;
+           IF REC_LEN > LONGEST_REC THEN LONGEST_REC = REC_LEN;
+           IF REC_LEN < SHORTEST_REC THEN SHORTEST_REC = REC_LEN;
+           CALL VSAM_IO;
+           IF VSIO_RETURN_CODE ¬= VSIO_RC_SUCCESS THEN
+              MORE_ARCH = FALSE;
+        END;
+     END;
+     VSIO_COMMAND = VSIO_CLOSE;
+     CALL VSAM_IO;
+     CLOSE FILE(SEQFL);
+     PUT SKIP EDIT('ARCHIVE RECORDS READ = ',ARCH_RECS_READ) (A,F(10));
+     PUT SKIP EDIT('SHORTEST RECORD READ = ',SHORTEST_REC)   (A,F(10));
+     PUT SKIP EDIT('LONGEST RECORD READ  = ',LONGEST_REC)    (A,F(10));
+ END PROCESS_ARCHOUT;
+
+ VSAM_IO:PROC;
+
+     CALL VSAMIOP(VSIO_PARAMETER_BLOCK,
+                  VSIO_FILE_BLOCK,
+                  ARCHIVE_RECORD);
+     IF VSIO_RETURN_CODE = VSIO_RC_SUCCESS
+      | VSIO_RETURN_CODE = VSIO_RC_END_OF_FILE THEN;
+     ELSE
+     DO;
+        PUT SKIP LIST('VSAM RETURN CODE ',
+                      DECODE_VSIO_RC(VSIO_RETURN_CODE));
+        PUT SKIP DATA(VSIO_RETURN_CODE,
+                      VSIO_VSAM_RC);
+        STOP;
+     END;
+
+ END VSAM_IO;
+ END ARCHUTI;
